@@ -62,6 +62,15 @@ pub fn friend_from(profile: &ProfileBlob) -> Friend {
     }
 }
 
+/// Build a signed friend request carrying this account's public profile.
+pub fn signed_friend_request(data: &VaultData) -> Result<super::packet::FriendRequest, CoreError> {
+    let me = data.identity()?;
+    let profile = profile_for(data)?;
+    let bytes = super::packet::friend_req_signing_bytes(&profile);
+    let signature = hex::encode(seqr_crypto::sign::sign(&me.signing_key, &bytes));
+    Ok(super::packet::FriendRequest { profile, signature })
+}
+
 /// This account represented as a roster [`Friend`] (for inclusion in group rosters).
 pub fn self_as_friend(data: &VaultData) -> Result<Friend, CoreError> {
     let p = data.identity()?.public();

@@ -6,6 +6,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
 export const MESSAGE_EVENT = "seqr://message"
 export const GROUP_EVENT = "seqr://group"
+export const REQUEST_EVENT = "seqr://request"
 
 export interface ProfileBlob {
 	v: number
@@ -59,6 +60,9 @@ export const api = {
 	exportProfile: (): Promise<string> => invoke("export_profile"),
 	importFriend: (token: string): Promise<Friend> => invoke("import_friend", { token }),
 	listFriends: (): Promise<Friend[]> => invoke("list_friends"),
+	listRequests: (): Promise<Friend[]> => invoke("list_requests"),
+	acceptRequest: (signing: string): Promise<void> => invoke("accept_request", { signing }),
+	declineRequest: (signing: string): Promise<void> => invoke("decline_request", { signing }),
 	listConversations: (): Promise<Conversation[]> => invoke("list_conversations"),
 	getHistory: (conversationId: string): Promise<StoredMessage[]> =>
 		invoke("get_history", { conversationId }),
@@ -79,6 +83,8 @@ export const api = {
 		listen<StoredMessage>(MESSAGE_EVENT, (e) => cb(e.payload)),
 	onGroupUpdate: (cb: (id: string) => void): Promise<UnlistenFn> =>
 		listen<string>(GROUP_EVENT, (e) => cb(e.payload)),
+	onRequest: (cb: (signing: string) => void): Promise<UnlistenFn> =>
+		listen<string>(REQUEST_EVENT, (e) => cb(e.payload)),
 }
 
 // Tauri rejects with the CoreError string; normalize for display.

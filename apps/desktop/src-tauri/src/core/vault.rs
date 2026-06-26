@@ -42,6 +42,9 @@ pub struct VaultData {
     /// identity-derived pairwise key at epoch 0.
     #[serde(default)]
     pub direct_keys: Vec<DirectKey>,
+    /// Incoming friend requests awaiting accept/decline.
+    #[serde(default)]
+    pub pending_requests: Vec<Friend>,
 }
 
 /// The current rotated key for a 1:1 conversation (latest epoch only).
@@ -151,6 +154,35 @@ impl VaultData {
         self.friends.retain(|f| f.signing_public != signing_public);
     }
 
+    /// Add a friend if not already present (and drop any pending request from them).
+    pub fn add_friend(&mut self, friend: Friend) -> bool {
+        self.remove_pending(&friend.signing_public);
+        if self.friends.iter().any(|f| f.signing_public == friend.signing_public) {
+            return false;
+        }
+        self.friends.push(friend);
+        true
+    }
+
+    /// Record an incoming friend request (deduped; ignored if already a friend).
+    pub fn add_pending(&mut self, friend: Friend) -> bool {
+        if self.friends.iter().any(|f| f.signing_public == friend.signing_public)
+            || self.pending_requests.iter().any(|r| r.signing_public == friend.signing_public)
+        {
+            return false;
+        }
+        self.pending_requests.push(friend);
+        true
+    }
+
+    pub fn remove_pending(&mut self, signing_public: &str) {
+        self.pending_requests.retain(|r| r.signing_public != signing_public);
+    }
+
+    pub fn pending_by_signing(&self, signing_public: &str) -> Option<&Friend> {
+        self.pending_requests.iter().find(|r| r.signing_public == signing_public)
+    }
+
     /// True if an incoming message with this (conversation, sender, seq) is already
     /// stored — guards against the same message arriving twice (direct + mailbox).
     pub fn has_incoming(&self, conversation_id: &str, sender: &str, seq: u64) -> bool {
@@ -220,6 +252,7 @@ pub fn create(data_dir: &Path, display_name: &str, password: &str) -> Result<(Sy
         messages: Vec::new(),
         groups: Vec::new(),
         direct_keys: Vec::new(),
+        pending_requests: Vec::new(),
     };
 
     let salt = kdf::generate_salt();

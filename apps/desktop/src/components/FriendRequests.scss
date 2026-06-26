@@ -1,0 +1,45 @@
+@use "../styles/tokens" as *;
+
+.requests {
+	display: flex;
+	flex-direction: column;
+	gap: $space-2;
+	padding: $space-2;
+	border: 1px solid $accent;
+	border-radius: $radius-sm;
+	background: $accent-quiet;
+}
+
+.requests-head {
+	font-size: 12px;
+	font-weight: 600;
+	color: $accent;
+}
+
+.request-card {
+	display: flex;
+	flex-direction: column;
+	gap: $space-1;
+	padding: $space-2;
+	background: $bg-panel;
+	border-radius: $radius-sm;
+}
+
+.request-name {
+	font-weight: 600;
+}
+
+.request-safety {
+	font-family: $mono;
+	font-size: 10px;
+	color: $text-muted;
+	word-break: break-word;
+}
+
+.request-actions {
+	display: flex;
+	gap: $space-2;
+	margin-top: $space-1;
+
+	button { flex: 1; font-size: 12px; padding: $space-1 $space-2; }
+}

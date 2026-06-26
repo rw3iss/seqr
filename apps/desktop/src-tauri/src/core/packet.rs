@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use seqr_protocol::MessageFrame;
+use seqr_protocol::{MessageFrame, ProfileBlob};
 
 use super::vault::Friend;
 
@@ -19,6 +19,27 @@ pub enum Packet {
     GroupInvite(GroupInvite),
     /// A rotated key for a 1:1 conversation, sealed under the identity pairwise key.
     KeyUpdate(KeyUpdate),
+    /// "I added you — add me back?" Carries the requester's signed public profile.
+    /// Accepted from *unknown* senders (that's the point) after signature verification.
+    FriendRequest(FriendRequest),
+}
+
+/// A friend request: the requester's public profile, signed by their identity key so
+/// the agreement key is provably bound to the signing key (no in-transit key swap).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FriendRequest {
+    pub profile: ProfileBlob,
+    /// Ed25519 signature over [`friend_req_signing_bytes`], hex.
+    pub signature: String,
+}
+
+/// Canonical bytes a friend request signs/verifies — binds all profile fields together.
+pub fn friend_req_signing_bytes(p: &ProfileBlob) -> Vec<u8> {
+    format!(
+        "seqr/friendreq/v1|{}|{}|{}|{}",
+        p.signing_public, p.agreement_public, p.node_addr, p.display_name
+    )
+    .into_bytes()
 }
 
 /// Carries a freshly rotated 1:1 key, sealed under the long-term pairwise key between

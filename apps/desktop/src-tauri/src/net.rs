@@ -21,6 +21,7 @@ use crate::core::{conversation, group, message, now_millis, vault, CoreError};
 
 pub const MESSAGE_EVENT: &str = "seqr://message";
 pub const GROUP_EVENT: &str = "seqr://group";
+pub const REQUEST_EVENT: &str = "seqr://request";
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -151,6 +152,7 @@ fn current_identity(state: &Arc<SessionState>) -> Option<Identity> {
 enum Inbound {
     Message(StoredMessage),
     GroupUpdated(String),
+    FriendRequested(String),
     Nothing,
 }
 
@@ -166,6 +168,10 @@ fn emit_inbound(state: &Arc<SessionState>, app: &AppHandle, bytes: &[u8], source
         Ok(Inbound::GroupUpdated(id)) => {
             debug_log(state, format!("RECV[{source}] group update {}", short(&id)));
             let _ = app.emit(GROUP_EVENT, &id);
+        }
+        Ok(Inbound::FriendRequested(who)) => {
+            debug_log(state, format!("RECV[{source}] friend request from {}", short(&who)));
+            let _ = app.emit(REQUEST_EVENT, &who);
         }
         Ok(Inbound::Nothing) => {
             debug_log(state, format!("RECV[{source}] duplicate/ignored"));
@@ -215,6 +221,28 @@ fn process_incoming(state: &Arc<SessionState>, bytes: &[u8]) -> Result<Inbound, 
             Ok(Inbound::Message(msg))
         }),
         Packet::GroupInvite(invite) => handle_invite(state, invite),
+        Packet::FriendRequest(req) => state.with_unlocked(|u| {
+            // Verify the profile signature (binds agreement key to the signing key).
+            let sig: [u8; 64] = hex::decode(&req.signature)
+                .ok()
+                .and_then(|v| v.try_into().ok())
+                .ok_or(CoreError::BadProfile("bad request signature".into()))?;
+            let signer: [u8; 32] = hex::decode(&req.profile.signing_public)
+                .ok()
+                .and_then(|v| v.try_into().ok())
+                .ok_or(CoreError::BadProfile("bad signing key".into()))?;
+            let bytes = crate::core::packet::friend_req_signing_bytes(&req.profile);
+            seqr_crypto::sign::verify_raw(&signer, &bytes, &sig)?;
+
+            let friend = crate::core::identity::friend_from(&req.profile);
+            let who = friend.signing_public.clone();
+            if u.data.add_pending(friend) {
+                vault::save(&state.data_dir, &u.vault_key, &u.data)?;
+                Ok(Inbound::FriendRequested(who))
+            } else {
+                Ok(Inbound::Nothing) // already a friend or already pending
+            }
+        }),
         Packet::KeyUpdate(ku) => state.with_unlocked(|u| {
             let me = u.data.identity()?;
             // The originator must be a known friend (we share a long-term pairwise key).

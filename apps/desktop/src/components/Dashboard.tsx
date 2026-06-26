@@ -14,6 +14,7 @@ import {
 import { AddFriendModal } from "./AddFriendModal"
 import { CreateGroupModal } from "./CreateGroupModal"
 import { GroupMembersModal } from "./GroupMembersModal"
+import { FriendRequests } from "./FriendRequests"
 import type { Friend } from "../lib/api"
 import "./Dashboard.scss"
 
@@ -68,6 +69,8 @@ export function Dashboard({ profile, onLocked }: Props) {
 					<button class="primary" onClick={() => setShowAdd(true)}>+ Friend</button>
 					<button onClick={() => setShowGroup(true)}>+ Group</button>
 				</div>
+
+				<FriendRequests onChanged={refresh} />
 
 				<nav class="friends">
 					{conversations.length === 0 && (

@@ -90,18 +90,66 @@ pub fn export_profile(state: Session) -> CoreResult<String> {
     })
 }
 
+/// Import a friend's token. Adds them locally AND sends them a signed friend request
+/// (carrying our profile) so they get a one-tap prompt to add us back — no second
+/// token exchange needed.
 #[tauri::command]
-pub fn import_friend(token: String, state: Session) -> CoreResult<Friend> {
+pub async fn import_friend(token: String, state: Session<'_>) -> CoreResult<Friend> {
     let profile = identity::decode_token(&token)?;
     let friend = identity::friend_from(&profile);
+
+    let (friend, request_json) = {
+        let data_dir = state.data_dir.clone();
+        state.with_unlocked(|u| {
+            if u.data.friends.iter().any(|f| f.signing_public == friend.signing_public) {
+                return Err(CoreError::DuplicateFriend);
+            }
+            u.data.add_friend(friend.clone());
+            vault::save(&data_dir, &u.vault_key, &u.data)?;
+            let request = identity::signed_friend_request(&u.data)?;
+            Ok((friend.clone(), Packet::FriendRequest(request).to_json()))
+        })?
+    };
+    net::deliver(state.inner(), &friend.signing_public, &request_json).await;
+    Ok(friend)
+}
+
+/// Pending incoming friend requests.
+#[tauri::command]
+pub fn list_requests(state: Session) -> CoreResult<Vec<Friend>> {
+    state.with_unlocked(|u| Ok(u.data.pending_requests.clone()))
+}
+
+/// Accept a friend request: add them as a friend (and reciprocate the request so they
+/// have us too, in case they imported us only after sending).
+#[tauri::command]
+pub async fn accept_request(signing: String, state: Session<'_>) -> CoreResult<()> {
+    let request_json = {
+        let data_dir = state.data_dir.clone();
+        state.with_unlocked(|u| {
+            let friend = u
+                .data
+                .pending_by_signing(&signing)
+                .ok_or(CoreError::UnknownSender)?
+                .clone();
+            u.data.add_friend(friend);
+            vault::save(&data_dir, &u.vault_key, &u.data)?;
+            let request = identity::signed_friend_request(&u.data)?;
+            Ok(Packet::FriendRequest(request).to_json())
+        })?
+    };
+    // Reciprocate so the requester definitely has us (idempotent on their side).
+    net::deliver(state.inner(), &signing, &request_json).await;
+    Ok(())
+}
+
+/// Decline a friend request: drop it.
+#[tauri::command]
+pub fn decline_request(signing: String, state: Session) -> CoreResult<()> {
     let data_dir = state.data_dir.clone();
     state.with_unlocked(|u| {
-        if u.data.friends.iter().any(|f| f.signing_public == friend.signing_public) {
-            return Err(CoreError::DuplicateFriend);
-        }
-        u.data.friends.push(friend.clone());
-        vault::save(&data_dir, &u.vault_key, &u.data)?;
-        Ok(friend)
+        u.data.remove_pending(&signing);
+        vault::save(&data_dir, &u.vault_key, &u.data)
     })
 }
 
