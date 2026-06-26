@@ -144,6 +144,28 @@ pub fn get_history(conversation_id: String, state: Session) -> CoreResult<Vec<St
     state.with_unlocked(|u| Ok(u.data.history(&conversation_id)))
 }
 
+/// The other members of a group (everyone but this account).
+#[tauri::command]
+pub fn group_members(group_id: String, state: Session) -> CoreResult<Vec<Friend>> {
+    state.with_unlocked(|u| {
+        Ok(u.data.group_by_id(&group_id).map(|g| g.members.clone()).unwrap_or_default())
+    })
+}
+
+/// A comparable safety number for the 1:1 with `friend`, to verify their identity
+/// out-of-band (guards against a tampered profile exchange).
+#[tauri::command]
+pub fn safety_number(friend: String, state: Session) -> CoreResult<String> {
+    state.with_unlocked(|u| {
+        let mine = u.data.identity()?.public().signing_public;
+        let theirs: [u8; 32] = hex::decode(&friend)
+            .ok()
+            .and_then(|v| v.try_into().ok())
+            .ok_or(CoreError::BadProfile("bad friend key".into()))?;
+        Ok(seqr_crypto::fingerprint::safety_number(&mine, &theirs))
+    })
+}
+
 /// Seal, sign, persist, and send a 1:1 message to a friend (by signing public key).
 #[tauri::command]
 pub async fn send_message(friend: String, body: String, state: Session<'_>) -> CoreResult<StoredMessage> {

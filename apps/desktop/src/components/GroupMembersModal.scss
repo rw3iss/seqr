@@ -1,0 +1,11 @@
+@use "../styles/tokens" as *;
+
+.gm-member-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: $space-2;
+	padding: $space-1 0;
+
+	button { font-size: 12px; padding: $space-1 $space-2; }
+}

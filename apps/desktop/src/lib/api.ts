@@ -62,6 +62,8 @@ export const api = {
 	listConversations: (): Promise<Conversation[]> => invoke("list_conversations"),
 	getHistory: (conversationId: string): Promise<StoredMessage[]> =>
 		invoke("get_history", { conversationId }),
+	groupMembers: (groupId: string): Promise<Friend[]> => invoke("group_members", { groupId }),
+	safetyNumber: (friend: string): Promise<string> => invoke("safety_number", { friend }),
 	sendMessage: (friend: string, body: string): Promise<StoredMessage> =>
 		invoke("send_message", { friend, body }),
 	createGroup: (name: string, members: string[]): Promise<Conversation> =>

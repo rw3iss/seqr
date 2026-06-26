@@ -74,9 +74,9 @@ reach you) — it is safe to send over any channel.
 3. **Both sides import.** Once you've each imported the other, you'll appear in one
    another's friends list and can open a private conversation.
 
-> Tip: exchange tokens over a channel you trust. Anyone who can both intercept *and*
-> replace a token mid-exchange could impersonate a friend — the same caution as
-> exchanging any contact detail.
+> Tip: exchange tokens over a channel you trust. To be certain no one tampered with the
+> exchange, open the 1:1 chat and click **Verify** — both of you should see the same
+> **safety number**. If the numbers match, your connection is genuine.
 
 ### Groups
 

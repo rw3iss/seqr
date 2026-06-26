@@ -44,6 +44,8 @@ pub fn run() {
             commands::list_friends,
             commands::list_conversations,
             commands::get_history,
+            commands::group_members,
+            commands::safety_number,
             commands::send_message,
             commands::create_group,
             commands::send_group_message,

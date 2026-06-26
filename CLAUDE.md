@@ -131,8 +131,16 @@ A local `seqr.toml` is already written at `~/.config/com.seqr.app/seqr.toml`.
   receiver picks the right key). 1:1 revoke (`remove_friend`). Group rotation
   (`rotate_group`) and member removal (`remove_member`) — any member mints a new Kg at
   epoch+1 and redistributes via `GroupInvite` (removal excludes the dropped member).
-  UI: Rotate key / Revoke controls in the chat header. Group member-removal has a
-  backend command but no dedicated picker UI yet (needs the roster surfaced).
+  UI: Rotate key / Revoke controls in the chat header; a Members modal
+  (`group_members` command) for viewing/removing group members; group bubbles show
+  sender display names from the roster.
+
+## Verification (safety numbers)
+
+`seqr_crypto::fingerprint::safety_number(a, b)` derives an order-independent,
+human-comparable fingerprint of two signing keys. The `safety_number` command + the
+1:1 chat "Verify" button surface it so friends can confirm out-of-band that no key was
+substituted during the profile exchange (mitigates the trust-on-first-use caveat).
 
 ## Status: MVP feature-complete
 

@@ -13,6 +13,8 @@ import {
 } from "../lib/api"
 import { AddFriendModal } from "./AddFriendModal"
 import { CreateGroupModal } from "./CreateGroupModal"
+import { GroupMembersModal } from "./GroupMembersModal"
+import type { Friend } from "../lib/api"
 import "./Dashboard.scss"
 
 interface Props {
@@ -125,7 +127,19 @@ function ChatWindow({
 	const [sending, setSending] = useState(false)
 	const [error, setError] = useState("")
 	const [notice, setNotice] = useState("")
+	const [members, setMembers] = useState<Friend[]>([])
+	const [showMembers, setShowMembers] = useState(false)
 	const historyRef = useRef<HTMLDivElement>(null)
+
+	const isGroup = conversation.kind === "group"
+
+	function refreshMembers() {
+		if (isGroup) api.groupMembers(conversation.id).then(setMembers).catch(() => {})
+	}
+
+	function nameOf(signing: string): string {
+		return members.find((m) => m.signing_public === signing)?.display_name ?? `${signing.slice(0, 8)}…`
+	}
 
 	function flash(msg: string) {
 		setNotice(msg)
@@ -153,6 +167,16 @@ function ChatWindow({
 		}
 	}
 
+	async function verify() {
+		try {
+			const num = await api.safetyNumber(conversation.peer!)
+			setNotice(`Safety number — compare with ${conversation.title}: ${num}`)
+			setTimeout(() => setNotice(""), 12000)
+		} catch (e) {
+			setError(errMessage(e))
+		}
+	}
+
 	function scrollToEnd() {
 		requestAnimationFrame(() => {
 			const el = historyRef.current
@@ -167,6 +191,7 @@ function ChatWindow({
 				scrollToEnd()
 			})
 			.catch((e) => setError(errMessage(e)))
+		refreshMembers()
 
 		// Append inbound messages belonging to this conversation.
 		const unlisten = api.onMessage((m) => {
@@ -220,6 +245,16 @@ function ChatWindow({
 					{conversation.kind === "group" ? "Secure · Group key" : "Secure · Static key"}
 				</span>
 				<div class="chat-actions">
+					{isGroup && (
+						<button title="View and manage members" onClick={() => setShowMembers(true)}>
+							Members
+						</button>
+					)}
+					{conversation.kind === "direct" && (
+						<button title="Show the safety number to verify identity" onClick={verify}>
+							Verify
+						</button>
+					)}
 					<button title="Rotate the conversation key" onClick={rotate}>Rotate key</button>
 					{conversation.kind === "direct" && (
 						<button class="danger" title="Revoke and remove this friend" onClick={revoke}>
@@ -240,9 +275,7 @@ function ChatWindow({
 				)}
 				{messages.map((m, i) => (
 					<div key={i} class={"bubble" + (m.outgoing ? " out" : " in")}>
-						{conversation.kind === "group" && !m.outgoing && (
-							<span class="bubble-sender">{m.sender.slice(0, 8)}…</span>
-						)}
+						{isGroup && !m.outgoing && <span class="bubble-sender">{nameOf(m.sender)}</span>}
 						<span class="bubble-body">{m.body}</span>
 						<span class="bubble-time">{formatTime(m.ts)}</span>
 					</div>
@@ -261,6 +294,18 @@ function ChatWindow({
 					Send
 				</button>
 			</form>
+
+			{showMembers && (
+				<GroupMembersModal
+					groupId={conversation.id}
+					groupName={conversation.title}
+					onClose={() => setShowMembers(false)}
+					onChanged={() => {
+						refreshMembers()
+						flash("Member removed · key rotated")
+					}}
+				/>
+			)}
 		</div>
 	)
 }

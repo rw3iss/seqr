@@ -14,6 +14,7 @@
 
 pub mod aead;
 pub mod agreement;
+pub mod fingerprint;
 pub mod group;
 pub mod kdf;
 pub mod keys;
