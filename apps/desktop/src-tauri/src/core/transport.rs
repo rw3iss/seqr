@@ -31,6 +31,9 @@ pub struct Transport {
     pub endpoint: Endpoint,
 }
 
+// `start_local`/`id`/`addr`/`close` are part of the transport API and exercised by
+// tests and diagnostics; they aren't all on the app's hot path yet.
+#[allow(dead_code)]
 impl Transport {
     /// Start the endpoint for production: relay + discovery enabled so peers are
     /// reachable across the internet by id alone.

@@ -115,6 +115,20 @@ edit and `sudo systemctl restart seqr-mailbox` to apply.
 
 ---
 
+## Troubleshooting (Linux)
+
+**`Gdk-Message: Error 71 (Protocol error) dispatching to Wayland display`** (or a
+blank/white window): WebKitGTK's DMABUF renderer can clash with some Wayland
+compositors and GPU drivers. The dev script already sets
+`WEBKIT_DISABLE_DMABUF_RENDERER=1` to avoid it. If a crash persists, also try forcing
+the X11 (XWayland) backend:
+
+```bash
+GDK_BACKEND=x11 pnpm tauri dev
+# or, if compositing still misbehaves:
+WEBKIT_DISABLE_COMPOSITING_MODE=1 pnpm tauri dev
+```
+
 ## Project structure & contributing
 
 See **`CLAUDE.md`** for the full layout, build/test commands, cryptography summary, and
