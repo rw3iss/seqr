@@ -1,0 +1,12 @@
+[package]
+name = "seqr-protocol"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Wire types shared between the desktop core and the VPS mailbox service. Pure data
+# definitions plus the canonical byte-encodings that get signed, so both sides agree
+# bit-for-bit on what a signature covers.
+
+[dependencies]
+serde.workspace = true

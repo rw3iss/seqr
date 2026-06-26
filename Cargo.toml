@@ -1,0 +1,25 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/seqr-crypto",
+    "crates/seqr-protocol",
+    "services/mailbox",
+]
+
+# The Tauri desktop core (apps/desktop/src-tauri) is intentionally NOT a workspace
+# member: it is scaffolded with its own lockfile/toolchain expectations by the Tauri
+# CLI. It depends on the shared crates by path. Keeping it out of this workspace lets
+# the lightweight server/crypto crates build and test without pulling the GUI stack.
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Seqr"]
+
+[workspace.dependencies]
+seqr-crypto = { path = "crates/seqr-crypto" }
+seqr-protocol = { path = "crates/seqr-protocol" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"

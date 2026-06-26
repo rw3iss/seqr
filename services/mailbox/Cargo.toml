@@ -1,0 +1,28 @@
+[package]
+name = "seqr-mailbox"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Seqr VPS helper: an encrypted store-and-forward mailbox. Parks ciphertext for
+# offline recipients and hands it back, authenticated, when they reconnect. Sees
+# only ciphertext; holds no accounts. Builds to a static musl binary.
+
+[[bin]]
+name = "seqr-mailbox"
+path = "src/main.rs"
+
+[dependencies]
+seqr-crypto.workspace = true
+seqr-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { version = "1", features = ["rt-multi-thread", "net", "macros", "signal"] }
+axum = "0.8"
+hex = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

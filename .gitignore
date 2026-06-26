@@ -3,3 +3,13 @@ node_modules/
 dist/
 *.db
 .DS_Store
+
+# Rust
+/target
+**/target
+Cargo.lock.bak
+
+# Node / Tauri
+node_modules/
+dist/
+.vite/

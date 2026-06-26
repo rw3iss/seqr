@@ -1,0 +1,36 @@
+[Unit]
+Description=Seqr encrypted mailbox (store-and-forward for offline E2E messages)
+Documentation=https://github.com/rw3iss/seqr
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=seqr
+Group=seqr
+EnvironmentFile=/etc/seqr-mailbox/seqr-mailbox.env
+ExecStart=/usr/local/bin/seqr-mailbox
+Restart=on-failure
+RestartSec=2
+
+# State directory: systemd creates and owns /var/lib/seqr-mailbox for the service user.
+StateDirectory=seqr-mailbox
+
+# Hardening — the mailbox needs only a TCP socket and its state directory.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target
