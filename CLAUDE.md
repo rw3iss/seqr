@@ -126,7 +126,20 @@ A local `seqr.toml` is already written at `~/.config/com.seqr.app/seqr.toml`.
   out; `net.rs` dispatches packets and handles invites. Vault stores `Group`s.
   UI: conversations list (1:1 + groups), CreateGroupModal, group chat. Note: for M4
   only the creator distributes Kg; full member-mesh distribution comes with rotation.
-- ⏳ **M5 — rotation/revocation**: rotate/remove for 1:1 and groups, concurrent-rotation resolution.
+- ✅ **M5 — rotation/revocation**: 1:1 key rotation (`rotate_direct` → `KeyUpdate`
+  packet, stored override key/epoch in the vault; messages carry the epoch so the
+  receiver picks the right key). 1:1 revoke (`remove_friend`). Group rotation
+  (`rotate_group`) and member removal (`remove_member`) — any member mints a new Kg at
+  epoch+1 and redistributes via `GroupInvite` (removal excludes the dropped member).
+  UI: Rotate key / Revoke controls in the chat header. Group member-removal has a
+  backend command but no dedicated picker UI yet (needs the roster surfaced).
+
+## Status: MVP feature-complete
+
+All planned milestones (M1–M5) plus the deployed mailbox are done. The app does account
+creation, friends, 1:1 + group E2E chat over iroh, offline delivery via the VPS
+mailbox, and key rotation/revocation. Run two instances (`pnpm tauri dev`) on separate
+machines/profiles to exercise live messaging.
 
 ## ⚠️ iroh version constraint
 

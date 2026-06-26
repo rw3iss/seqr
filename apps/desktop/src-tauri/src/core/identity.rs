@@ -62,6 +62,17 @@ pub fn friend_from(profile: &ProfileBlob) -> Friend {
     }
 }
 
+/// This account represented as a roster [`Friend`] (for inclusion in group rosters).
+pub fn self_as_friend(data: &VaultData) -> Result<Friend, CoreError> {
+    let p = data.identity()?.public();
+    Ok(Friend {
+        display_name: data.display_name.clone(),
+        agreement_public: hex::encode(p.agreement_public),
+        signing_public: hex::encode(p.signing_public),
+        node_addr: data.node_addr.clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

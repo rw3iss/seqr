@@ -153,7 +153,7 @@ fn process_incoming(state: &Arc<SessionState>, bytes: &[u8]) -> Result<Inbound, 
                     .friend_by_signing(&frame.sender)
                     .ok_or(CoreError::UnknownSender)?
                     .clone();
-                conversation::pairwise_key(&me, &friend)?
+                conversation::direct_key_for_epoch(&u.data, &me, &friend, frame.epoch)?
             };
 
             let body = message::open_frame(&key, &frame)?;
@@ -170,6 +170,25 @@ fn process_incoming(state: &Arc<SessionState>, bytes: &[u8]) -> Result<Inbound, 
             Ok(Inbound::Message(msg))
         }),
         Packet::GroupInvite(invite) => handle_invite(state, invite),
+        Packet::KeyUpdate(ku) => state.with_unlocked(|u| {
+            let me = u.data.identity()?;
+            // The originator must be a known friend (we share a long-term pairwise key).
+            let originator = u
+                .data
+                .friend_by_signing(&ku.originator)
+                .ok_or(CoreError::UnknownSender)?
+                .clone();
+            let key = conversation::open_direct_key(
+                &me,
+                &originator,
+                &ku.conversation_id,
+                ku.epoch,
+                &ku.sealed_key,
+            )?;
+            u.data.set_direct_key(&ku.conversation_id, ku.epoch, hex::encode(key));
+            vault::save(&state.data_dir, &u.vault_key, &u.data)?;
+            Ok(Inbound::Nothing)
+        }),
     }
 }
 

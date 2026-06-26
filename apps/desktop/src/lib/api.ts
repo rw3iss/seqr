@@ -68,6 +68,11 @@ export const api = {
 		invoke("create_group", { name, members }),
 	sendGroupMessage: (groupId: string, body: string): Promise<StoredMessage> =>
 		invoke("send_group_message", { groupId, body }),
+	rotateDirect: (friend: string): Promise<void> => invoke("rotate_direct", { friend }),
+	removeFriend: (friend: string): Promise<void> => invoke("remove_friend", { friend }),
+	rotateGroup: (groupId: string): Promise<void> => invoke("rotate_group", { groupId }),
+	removeMember: (groupId: string, member: string): Promise<void> =>
+		invoke("remove_member", { groupId, member }),
 	onMessage: (cb: (m: StoredMessage) => void): Promise<UnlistenFn> =>
 		listen<StoredMessage>(MESSAGE_EVENT, (e) => cb(e.payload)),
 	onGroupUpdate: (cb: (id: string) => void): Promise<UnlistenFn> =>

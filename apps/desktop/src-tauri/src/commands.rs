@@ -155,10 +155,9 @@ pub async fn send_message(friend: String, body: String, state: Session<'_>) -> C
                 u.data.friend_by_signing(&friend).ok_or(CoreError::UnknownSender)?.clone();
             let my_signing = hex::encode(me.public().signing_public);
             let conv_id = conversation::direct_conversation_id(&my_signing, &friend);
-            let key = conversation::pairwise_key(&me, &friend_rec)?;
+            let (epoch, key) = conversation::current_direct_key(&u.data, &me, &friend_rec)?;
             let seq = u.data.next_seq(&conv_id);
-            let frame =
-                message::build_frame(&me, &conv_id, conversation::DIRECT_EPOCH, &key, seq, &body);
+            let frame = message::build_frame(&me, &conv_id, epoch, &key, seq, &body);
             let msg = stored_outgoing(&conv_id, &my_signing, &body, seq);
             u.data.add_message(msg.clone());
             vault::save(&data_dir, &u.vault_key, &u.data)?;
@@ -181,8 +180,7 @@ pub async fn create_group(
         let data_dir = state.data_dir.clone();
         state.with_unlocked(|u| {
             let me = u.data.identity()?;
-            let my_pub = me.public();
-            let my_signing = hex::encode(my_pub.signing_public);
+            let my_signing = hex::encode(me.public().signing_public);
 
             // Resolve selected friends (must be in roster).
             let mut roster_others = Vec::new();
@@ -195,13 +193,7 @@ pub async fn create_group(
             let epoch = 0u64;
 
             // Full roster includes us, for the invitees' rosters.
-            let me_member = Friend {
-                display_name: u.data.display_name.clone(),
-                agreement_public: hex::encode(my_pub.agreement_public),
-                signing_public: my_signing.clone(),
-                node_addr: u.data.node_addr.clone(),
-            };
-            let mut full_roster = vec![me_member];
+            let mut full_roster = vec![identity::self_as_friend(&u.data)?];
             full_roster.extend(roster_others.iter().cloned());
 
             // Store the group locally (members = everyone but us).
@@ -273,6 +265,126 @@ pub async fn send_group_message(
         net::deliver(state.inner(), recipient, &packet_json).await;
     }
     Ok(stored)
+}
+
+/// Rotate the key of a 1:1 conversation: mint a new key at the next epoch and send it
+/// to the friend (sealed under the long-term pairwise key).
+#[tauri::command]
+pub async fn rotate_direct(friend: String, state: Session<'_>) -> CoreResult<()> {
+    let (recipient, packet) = {
+        let data_dir = state.data_dir.clone();
+        state.with_unlocked(|u| {
+            let me = u.data.identity()?;
+            let friend_rec =
+                u.data.friend_by_signing(&friend).ok_or(CoreError::UnknownSender)?.clone();
+            let my_signing = hex::encode(me.public().signing_public);
+            let conv_id = conversation::direct_conversation_id(&my_signing, &friend);
+            let (cur_epoch, _) = conversation::current_direct_key(&u.data, &me, &friend_rec)?;
+            let new_epoch = cur_epoch + 1;
+            let new_key = seqr_crypto::group::generate_group_key();
+            u.data.set_direct_key(&conv_id, new_epoch, hex::encode(new_key));
+            vault::save(&data_dir, &u.vault_key, &u.data)?;
+
+            let sealed =
+                conversation::seal_direct_key(&me, &friend_rec, &conv_id, new_epoch, &new_key)?;
+            let packet = Packet::KeyUpdate(crate::core::packet::KeyUpdate {
+                conversation_id: conv_id,
+                epoch: new_epoch,
+                originator: my_signing,
+                sealed_key: sealed,
+            })
+            .to_json();
+            Ok((friend.clone(), packet))
+        })?
+    };
+    net::deliver(state.inner(), &recipient, &packet).await;
+    Ok(())
+}
+
+/// Revoke a 1:1: remove the friend so no further messages are accepted or sent.
+/// History is retained locally.
+#[tauri::command]
+pub fn remove_friend(friend: String, state: Session) -> CoreResult<()> {
+    let data_dir = state.data_dir.clone();
+    state.with_unlocked(|u| {
+        u.data.remove_friend(&friend);
+        vault::save(&data_dir, &u.vault_key, &u.data)
+    })
+}
+
+/// Rotate a group key: any member may mint a new key at the next epoch and redistribute
+/// it (sealed) to every current member.
+#[tauri::command]
+pub async fn rotate_group(group_id: String, state: Session<'_>) -> CoreResult<()> {
+    let invites = rebuild_group_keys(&state, &group_id, None)?;
+    for (recipient, packet) in &invites {
+        net::deliver(state.inner(), recipient, packet).await;
+    }
+    Ok(())
+}
+
+/// Remove a member from a group (revocation): mint a new key at the next epoch and
+/// distribute it to everyone *except* the removed member, cutting them off.
+#[tauri::command]
+pub async fn remove_member(
+    group_id: String,
+    member: String,
+    state: Session<'_>,
+) -> CoreResult<()> {
+    let invites = rebuild_group_keys(&state, &group_id, Some(&member))?;
+    for (recipient, packet) in &invites {
+        net::deliver(state.inner(), recipient, packet).await;
+    }
+    Ok(())
+}
+
+/// Shared core of group rotation/removal: bump the epoch, mint a new key, update the
+/// local group (optionally dropping `remove`), and return per-recipient sealed invites.
+fn rebuild_group_keys(
+    state: &Session,
+    group_id: &str,
+    remove: Option<&str>,
+) -> CoreResult<Vec<(String, Vec<u8>)>> {
+    let data_dir = state.data_dir.clone();
+    state.with_unlocked(|u| {
+        let me = u.data.identity()?;
+        let my_signing = hex::encode(me.public().signing_public);
+        let g = u.data.group_by_id(group_id).ok_or(CoreError::UnknownSender)?.clone();
+
+        let remaining: Vec<Friend> = g
+            .members
+            .into_iter()
+            .filter(|m| remove != Some(m.signing_public.as_str()))
+            .collect();
+        let new_kg = seqr_crypto::group::generate_group_key();
+        let new_epoch = g.epoch + 1;
+
+        // Update our local group.
+        if let Some(group) = u.data.group_by_id_mut(group_id) {
+            group.members = remaining.clone();
+            group.epoch = new_epoch;
+            group.key = hex::encode(new_kg);
+        }
+        vault::save(&data_dir, &u.vault_key, &u.data)?;
+
+        let mut full_roster = vec![identity::self_as_friend(&u.data)?];
+        full_roster.extend(remaining.iter().cloned());
+
+        let mut invites = Vec::new();
+        for recipient in &remaining {
+            let sealed = group::seal_group_key(&me, recipient, group_id, new_epoch, &new_kg)?;
+            let invite = GroupInvite {
+                group_id: group_id.to_string(),
+                name: g.name.clone(),
+                epoch: new_epoch,
+                members: full_roster.clone(),
+                originator: my_signing.clone(),
+                sealed_key: sealed,
+            };
+            invites.push((recipient.signing_public.clone(), Packet::GroupInvite(invite).to_json()));
+        }
+        Ok(invites)
+    })
 }
 
 fn stored_outgoing(conversation_id: &str, my_signing: &str, body: &str, seq: u64) -> StoredMessage {

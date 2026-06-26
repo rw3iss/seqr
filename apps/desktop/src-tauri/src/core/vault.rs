@@ -38,6 +38,19 @@ pub struct VaultData {
     /// Group conversations this account is a member of.
     #[serde(default)]
     pub groups: Vec<Group>,
+    /// Rotated keys for 1:1 conversations. Absent => the conversation uses the default
+    /// identity-derived pairwise key at epoch 0.
+    #[serde(default)]
+    pub direct_keys: Vec<DirectKey>,
+}
+
+/// The current rotated key for a 1:1 conversation (latest epoch only).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DirectKey {
+    pub conversation_id: String,
+    pub epoch: u64,
+    /// Current key, hex.
+    pub key: String,
 }
 
 /// A group conversation. `members` lists every *other* member (this account is
@@ -113,6 +126,31 @@ impl VaultData {
             .and_then(|v| v.try_into().ok())
     }
 
+    /// The current rotated key for a direct conversation, if one exists.
+    pub fn direct_key(&self, conversation_id: &str) -> Option<&DirectKey> {
+        self.direct_keys.iter().find(|k| k.conversation_id == conversation_id)
+    }
+
+    /// Insert or replace the rotated key for a direct conversation.
+    pub fn set_direct_key(&mut self, conversation_id: &str, epoch: u64, key_hex: String) {
+        match self.direct_keys.iter_mut().find(|k| k.conversation_id == conversation_id) {
+            Some(k) => {
+                k.epoch = epoch;
+                k.key = key_hex;
+            }
+            None => self.direct_keys.push(DirectKey {
+                conversation_id: conversation_id.to_string(),
+                epoch,
+                key: key_hex,
+            }),
+        }
+    }
+
+    /// Remove a friend (revoke the 1:1) along with its rotated key. History is kept.
+    pub fn remove_friend(&mut self, signing_public: &str) {
+        self.friends.retain(|f| f.signing_public != signing_public);
+    }
+
     /// True if an incoming message with this (conversation, sender, seq) is already
     /// stored — guards against the same message arriving twice (direct + mailbox).
     pub fn has_incoming(&self, conversation_id: &str, sender: &str, seq: u64) -> bool {
@@ -181,6 +219,7 @@ pub fn create(data_dir: &Path, display_name: &str, password: &str) -> Result<(Sy
         friends: Vec::new(),
         messages: Vec::new(),
         groups: Vec::new(),
+        direct_keys: Vec::new(),
     };
 
     let salt = kdf::generate_salt();

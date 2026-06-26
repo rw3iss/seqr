@@ -91,7 +91,14 @@ export function Dashboard({ profile, onLocked }: Props) {
 
 			<main class="chat">
 				{selected ? (
-					<ChatWindow key={selected.id} conversation={selected} />
+					<ChatWindow
+						key={selected.id}
+						conversation={selected}
+						onRemoved={() => {
+							setSelected(null)
+							refresh()
+						}}
+					/>
 				) : (
 					<div class="chat-empty muted">
 						<h2>Seqr</h2>
@@ -106,12 +113,45 @@ export function Dashboard({ profile, onLocked }: Props) {
 	)
 }
 
-function ChatWindow({ conversation }: { conversation: Conversation }) {
+function ChatWindow({
+	conversation,
+	onRemoved,
+}: {
+	conversation: Conversation
+	onRemoved: () => void
+}) {
 	const [messages, setMessages] = useState<StoredMessage[]>([])
 	const [draft, setDraft] = useState("")
 	const [sending, setSending] = useState(false)
 	const [error, setError] = useState("")
+	const [notice, setNotice] = useState("")
 	const historyRef = useRef<HTMLDivElement>(null)
+
+	function flash(msg: string) {
+		setNotice(msg)
+		setTimeout(() => setNotice(""), 2500)
+	}
+
+	async function rotate() {
+		try {
+			conversation.kind === "group"
+				? await api.rotateGroup(conversation.id)
+				: await api.rotateDirect(conversation.peer!)
+			flash("🔑 Key rotated")
+		} catch (e) {
+			setError(errMessage(e))
+		}
+	}
+
+	async function revoke() {
+		if (conversation.kind !== "direct") return
+		try {
+			await api.removeFriend(conversation.peer!)
+			onRemoved()
+		} catch (e) {
+			setError(errMessage(e))
+		}
+	}
 
 	function scrollToEnd() {
 		requestAnimationFrame(() => {
@@ -179,7 +219,17 @@ function ChatWindow({ conversation }: { conversation: Conversation }) {
 				<span class="badge secure">
 					{conversation.kind === "group" ? "Secure · Group key" : "Secure · Static key"}
 				</span>
+				<div class="chat-actions">
+					<button title="Rotate the conversation key" onClick={rotate}>Rotate key</button>
+					{conversation.kind === "direct" && (
+						<button class="danger" title="Revoke and remove this friend" onClick={revoke}>
+							Revoke
+						</button>
+					)}
+				</div>
 			</header>
+
+			{notice && <p class="chat-notice">{notice}</p>}
 
 			<div class="chat-history" ref={historyRef}>
 				{messages.length === 0 && (

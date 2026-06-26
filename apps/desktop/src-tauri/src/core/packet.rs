@@ -17,6 +17,20 @@ pub enum Packet {
     Message(MessageFrame),
     /// Invitation to (or membership refresh for) a group, addressed to one recipient.
     GroupInvite(GroupInvite),
+    /// A rotated key for a 1:1 conversation, sealed under the identity pairwise key.
+    KeyUpdate(KeyUpdate),
+}
+
+/// Carries a freshly rotated 1:1 key, sealed under the long-term pairwise key between
+/// the two parties so the recipient can open it without a new profile exchange.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyUpdate {
+    pub conversation_id: String,
+    pub epoch: u64,
+    /// Sender's Ed25519 public key (hex) — the originator, found in the recipient's roster.
+    pub originator: String,
+    /// `nonce || ciphertext` of the 32-byte key, sealed under the identity pairwise key.
+    pub sealed_key: String,
 }
 
 /// Sent individually to each member: carries the full roster plus the group key sealed

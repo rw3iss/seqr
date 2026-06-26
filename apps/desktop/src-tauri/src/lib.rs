@@ -47,6 +47,10 @@ pub fn run() {
             commands::send_message,
             commands::create_group,
             commands::send_group_message,
+            commands::rotate_direct,
+            commands::remove_friend,
+            commands::rotate_group,
+            commands::remove_member,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
