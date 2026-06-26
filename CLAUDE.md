@@ -120,7 +120,12 @@ A local `seqr.toml` is already written at `~/.config/com.seqr.app/seqr.toml`.
   loop (`net.rs`) pulls + acks queued messages every 5s while unlocked, dedup'd by
   (conversation, sender, seq). Verified by a live round-trip test against the VPS
   (`mailbox_live_roundtrip`, `--ignored`).
-- ⏳ **M4 — groups**: conversation generalisation, group-key distribution, fan-out, group UI.
+- ✅ **M4 — groups**: `core/group.rs` (seal/open group key under pairwise),
+  `core/packet.rs` (`Packet::Message` | `GroupInvite` — one envelope over the wire).
+  `create_group` mints Kg and distributes sealed invites; `send_group_message` fans
+  out; `net.rs` dispatches packets and handles invites. Vault stores `Group`s.
+  UI: conversations list (1:1 + groups), CreateGroupModal, group chat. Note: for M4
+  only the creator distributes Kg; full member-mesh distribution comes with rotation.
 - ⏳ **M5 — rotation/revocation**: rotate/remove for 1:1 and groups, concurrent-rotation resolution.
 
 ## ⚠️ iroh version constraint

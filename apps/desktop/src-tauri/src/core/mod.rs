@@ -13,9 +13,11 @@
 
 pub mod config;
 pub mod conversation;
+pub mod group;
 pub mod identity;
 pub mod mailbox;
 pub mod message;
+pub mod packet;
 pub mod session;
 pub mod transport;
 pub mod vault;

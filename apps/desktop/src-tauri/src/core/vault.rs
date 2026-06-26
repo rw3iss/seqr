@@ -35,6 +35,21 @@ pub struct VaultData {
     /// vault files loadable.
     #[serde(default)]
     pub messages: Vec<StoredMessage>,
+    /// Group conversations this account is a member of.
+    #[serde(default)]
+    pub groups: Vec<Group>,
+}
+
+/// A group conversation. `members` lists every *other* member (this account is
+/// implicit). The group is sealed with a single shared symmetric `key` at `epoch`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Group {
+    pub id: String,
+    pub name: String,
+    pub members: Vec<Friend>,
+    pub epoch: u64,
+    /// Current group key (Kg), hex.
+    pub key: String,
 }
 
 /// One stored message in a conversation's history (plaintext at rest within the
@@ -81,6 +96,21 @@ impl VaultData {
     /// Look up a friend by their Ed25519 (signing) public key.
     pub fn friend_by_signing(&self, signing_public: &str) -> Option<&Friend> {
         self.friends.iter().find(|f| f.signing_public == signing_public)
+    }
+
+    pub fn group_by_id(&self, id: &str) -> Option<&Group> {
+        self.groups.iter().find(|g| g.id == id)
+    }
+
+    pub fn group_by_id_mut(&mut self, id: &str) -> Option<&mut Group> {
+        self.groups.iter_mut().find(|g| g.id == id)
+    }
+
+    /// The group's symmetric key as raw bytes, for the current epoch.
+    pub fn group_key(&self, id: &str) -> Option<[u8; 32]> {
+        self.group_by_id(id)
+            .and_then(|g| hex::decode(&g.key).ok())
+            .and_then(|v| v.try_into().ok())
     }
 
     /// True if an incoming message with this (conversation, sender, seq) is already
@@ -150,6 +180,7 @@ pub fn create(data_dir: &Path, display_name: &str, password: &str) -> Result<(Sy
         node_addr: String::new(),
         friends: Vec::new(),
         messages: Vec::new(),
+        groups: Vec::new(),
     };
 
     let salt = kdf::generate_salt();

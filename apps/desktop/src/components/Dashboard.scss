@@ -36,7 +36,12 @@
 	padding: $space-1 $space-2;
 }
 
-.add-friend { width: 100%; }
+.sidebar-actions {
+	display: flex;
+	gap: $space-2;
+
+	button { flex: 1; }
+}
 
 .friends {
 	flex: 1;
@@ -79,6 +84,12 @@
 	align-items: center;
 	justify-content: center;
 	font-weight: 600;
+
+	&.group {
+		background: $accent-quiet;
+		color: $accent;
+		border: 1px solid $accent;
+	}
 }
 
 .sidebar-foot {
@@ -155,6 +166,7 @@
 
 	.bubble-body { white-space: pre-wrap; word-break: break-word; }
 	.bubble-time { font-size: 10px; color: $text-muted; align-self: flex-end; }
+	.bubble-sender { font-size: 10px; color: $accent; font-family: $mono; }
 
 	&.in {
 		background: $bg-elevated;

@@ -5,6 +5,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 
 export const MESSAGE_EVENT = "seqr://message"
+export const GROUP_EVENT = "seqr://group"
 
 export interface ProfileBlob {
 	v: number
@@ -36,6 +37,15 @@ export interface StoredMessage {
 	body: string
 	ts: number
 	outgoing: boolean
+	seq: number
+}
+
+export interface Conversation {
+	id: string
+	kind: "direct" | "group"
+	title: string
+	peer: string | null
+	members: number
 }
 
 export const api = {
@@ -49,11 +59,19 @@ export const api = {
 	exportProfile: (): Promise<string> => invoke("export_profile"),
 	importFriend: (token: string): Promise<Friend> => invoke("import_friend", { token }),
 	listFriends: (): Promise<Friend[]> => invoke("list_friends"),
-	getHistory: (friend: string): Promise<StoredMessage[]> => invoke("get_history", { friend }),
+	listConversations: (): Promise<Conversation[]> => invoke("list_conversations"),
+	getHistory: (conversationId: string): Promise<StoredMessage[]> =>
+		invoke("get_history", { conversationId }),
 	sendMessage: (friend: string, body: string): Promise<StoredMessage> =>
 		invoke("send_message", { friend, body }),
+	createGroup: (name: string, members: string[]): Promise<Conversation> =>
+		invoke("create_group", { name, members }),
+	sendGroupMessage: (groupId: string, body: string): Promise<StoredMessage> =>
+		invoke("send_group_message", { groupId, body }),
 	onMessage: (cb: (m: StoredMessage) => void): Promise<UnlistenFn> =>
 		listen<StoredMessage>(MESSAGE_EVENT, (e) => cb(e.payload)),
+	onGroupUpdate: (cb: (id: string) => void): Promise<UnlistenFn> =>
+		listen<string>(GROUP_EVENT, (e) => cb(e.payload)),
 }
 
 // Tauri rejects with the CoreError string; normalize for display.

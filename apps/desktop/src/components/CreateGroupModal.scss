@@ -1,0 +1,26 @@
+@use "../styles/tokens" as *;
+
+.group-title {
+	margin: 0 0 $space-2;
+}
+
+.member-list {
+	display: flex;
+	flex-direction: column;
+	gap: $space-1;
+	max-height: 220px;
+	overflow-y: auto;
+	border: 1px solid $border;
+	border-radius: $radius-sm;
+	padding: $space-2;
+}
+
+.member-row {
+	display: flex;
+	align-items: center;
+	gap: $space-2;
+	padding: $space-1;
+	cursor: pointer;
+
+	input { width: auto; }
+}
