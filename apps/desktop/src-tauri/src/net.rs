@@ -51,7 +51,7 @@ pub async fn deliver(state: &Arc<SessionState>, recipient_hex: &str, payload: &[
         None => false,
     };
     if !delivered {
-        let client = MailboxClient::new(&state.mailbox_url);
+        let client = MailboxClient::new(&state.mailbox_url, state.mailbox_cert.as_deref());
         let payload_str = String::from_utf8_lossy(payload).to_string();
         if let Err(e) = client.push(recipient_hex, &payload_str).await {
             eprintln!("seqr: mailbox push failed: {e}");
@@ -73,7 +73,7 @@ async fn accept_loop(transport: Transport, state: Arc<SessionState>, app: AppHan
 }
 
 async fn poll_mailbox_loop(state: Arc<SessionState>, app: AppHandle) {
-    let client = MailboxClient::new(&state.mailbox_url);
+    let client = MailboxClient::new(&state.mailbox_url, state.mailbox_cert.as_deref());
     loop {
         if !state.is_unlocked() {
             break;

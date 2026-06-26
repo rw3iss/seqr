@@ -23,15 +23,18 @@ pub struct Unlocked {
 pub struct SessionState {
     pub data_dir: PathBuf,
     pub mailbox_url: String,
+    /// Pinned mailbox certificate (PEM), if configured.
+    pub mailbox_cert: Option<String>,
     pub unlocked: Mutex<Option<Unlocked>>,
     pub transport: Mutex<Option<Transport>>,
 }
 
 impl SessionState {
-    pub fn new(data_dir: PathBuf, mailbox_url: String) -> Self {
+    pub fn new(data_dir: PathBuf, mailbox_url: String, mailbox_cert: Option<String>) -> Self {
         Self {
             data_dir,
             mailbox_url,
+            mailbox_cert,
             unlocked: Mutex::new(None),
             transport: Mutex::new(None),
         }

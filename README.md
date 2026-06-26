@@ -104,15 +104,25 @@ scp services/mailbox/deploy/* user@your-server:/tmp/
 # On the server: install (creates a hardened systemd service on :8787)
 ssh user@your-server 'sudo bash /tmp/install.sh'
 
+# Add TLS (self-signed CA + leaf via nginx; rebinds the mailbox to localhost)
+scp services/mailbox/deploy/setup-tls.sh services/mailbox/deploy/nginx-seqr.conf user@your-server:/tmp/
+ssh user@your-server 'sudo SEQR_HOST=<your-server-ip> bash /tmp/setup-tls.sh'
+# ^ prints the CA certificate (PEM) + fingerprint at the end.
+
 # Verify
-curl http://your-server:8787/health     # -> ok
+curl --cacert ca.pem https://<your-server-ip>:8443/health   # -> ok
 ```
 
-Then point the app at it via `~/.config/com.seqr.app/seqr.toml`
-(see `config/seqr.example.toml`) or the `SEQR_MAILBOX_URL` environment variable.
+**TLS / certificate pinning.** `setup-tls.sh` creates a self-signed CA and serves the
+mailbox over HTTPS on `:8443`. The app trusts **only** that certificate (no public CA),
+so no certificate authority can impersonate your mailbox. Point clients at it via
+`seqr.toml` (`mailbox_url = "https://<ip>:8443"`) and place the printed CA PEM beside it
+as `mailbox_cert.pem` — or, for the default mailbox, the CA is already compiled into the
+app so it works with no setup.
 
-The service config lives in `/etc/seqr-mailbox/seqr-mailbox.env` (port, limits);
-edit and `sudo systemctl restart seqr-mailbox` to apply.
+The service config lives in `/etc/seqr-mailbox/seqr-mailbox.env`; TLS certs in
+`/etc/seqr-mailbox/tls/`. Edit and `sudo systemctl restart seqr-mailbox` (or
+`reload nginx`) to apply.
 
 ---
 

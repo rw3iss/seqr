@@ -6,7 +6,7 @@
 //! Ed25519 key (the same key that is the iroh/identity public key), so only the owner
 //! can fetch their mail. The helper sees ciphertext only.
 
-use reqwest::Client;
+use reqwest::{Certificate, Client};
 
 use seqr_crypto::keys::Identity;
 use seqr_crypto::sign::sign;
@@ -26,8 +26,21 @@ pub struct MailboxClient {
 }
 
 impl MailboxClient {
-    pub fn new(base_url: &str) -> Self {
-        Self { base: base_url.trim_end_matches('/').to_string(), http: Client::new() }
+    /// Build a client for `base_url`. When `cert_pem` is provided (the mailbox's
+    /// self-signed certificate), it is pinned as the *only* trusted root — system/CA
+    /// roots are disabled, so no certificate authority can impersonate the mailbox.
+    pub fn new(base_url: &str, cert_pem: Option<&str>) -> Self {
+        let mut builder = Client::builder();
+        if let Some(pem) = cert_pem {
+            match Certificate::from_pem(pem.as_bytes()) {
+                Ok(cert) => {
+                    builder = builder.add_root_certificate(cert).tls_built_in_root_certs(false);
+                }
+                Err(e) => eprintln!("seqr: ignoring invalid mailbox cert: {e}"),
+            }
+        }
+        let http = builder.build().unwrap_or_else(|_| Client::new());
+        Self { base: base_url.trim_end_matches('/').to_string(), http }
     }
 
     /// Park `payload` (an opaque, already-sealed frame) for recipient `to`
@@ -100,8 +113,10 @@ mod tests {
     #[ignore]
     async fn mailbox_live_roundtrip() {
         let url = std::env::var("SEQR_MAILBOX_URL")
-            .unwrap_or_else(|_| "http://37.27.248.79:8787".to_string());
-        let client = MailboxClient::new(&url);
+            .unwrap_or_else(|_| "https://37.27.248.79:8443".to_string());
+        // Optional path to the pinned cert (SEQR_MAILBOX_CERT) for HTTPS endpoints.
+        let cert = std::env::var("SEQR_MAILBOX_CERT").ok().and_then(|p| std::fs::read_to_string(p).ok());
+        let client = MailboxClient::new(&url, cert.as_deref());
         let me = Identity::generate();
         let id_hex = hex::encode(me.public().signing_public);
 

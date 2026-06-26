@@ -26,10 +26,11 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir).ok();
             std::fs::create_dir_all(&config_dir).ok();
 
-            let config = AppConfig::resolve(&config_dir.join("seqr.toml"));
+            let config = AppConfig::resolve(&config_dir);
             let mailbox_url = config.mailbox_url.clone();
+            let mailbox_cert = config.mailbox_cert.clone();
             app.manage(config);
-            app.manage(Arc::new(SessionState::new(data_dir, mailbox_url)));
+            app.manage(Arc::new(SessionState::new(data_dir, mailbox_url, mailbox_cert)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

@@ -5,8 +5,13 @@
 #   macOS:   ~/Library/Application Support/com.seqr.app/seqr.toml
 #   Windows: %APPDATA%\com.seqr.app\seqr.toml
 #
-# Or override at runtime with the SEQR_MAILBOX_URL environment variable.
-# If neither is present, the app falls back to the compiled-in default.
+# Or override the URL at runtime with the SEQR_MAILBOX_URL environment variable.
 
-# URL of your self-hosted mailbox helper (see services/mailbox).
-mailbox_url = "http://37.27.248.79:8787"
+# URL of your self-hosted mailbox helper (TLS-terminated by nginx; see
+# services/mailbox/deploy/setup-tls.sh).
+mailbox_url = "https://37.27.248.79:8443"
+
+# TLS certificate pinning: place the mailbox's CA certificate (printed by setup-tls.sh)
+# next to this file as `mailbox_cert.pem`. The app trusts ONLY that certificate for the
+# mailbox connection — no public CA can impersonate it. Without it, an https mailbox
+# with a self-signed cert is rejected.
