@@ -18,6 +18,7 @@ import { GroupMembersModal } from "./GroupMembersModal"
 import { FriendRequests } from "./FriendRequests"
 import { SettingsModal } from "./SettingsModal"
 import { ensureNotificationPermission, notify } from "../lib/notify"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 import type { Friend } from "../lib/api"
 import "./Dashboard.scss"
 
@@ -34,6 +35,7 @@ export function Dashboard({ profile, onLocked }: Props) {
 	const [showSettings, setShowSettings] = useState(false)
 	const [config, setConfig] = useState<AppConfig | null>(null)
 	const [settings, setSettings] = useState<Settings | null>(null)
+	const [focused, setFocused] = useState(true)
 	const [error, setError] = useState("")
 
 	async function refresh() {
@@ -58,19 +60,30 @@ export function Dashboard({ profile, onLocked }: Props) {
 		}
 	}, [])
 
-	// Global notification listener: notify on inbound messages unless they belong to
-	// the conversation the user is currently viewing.
+	// Track window focus so we only notify when Seqr is in the background/minimized.
+	useEffect(() => {
+		const win = getCurrentWindow()
+		win.isFocused().then(setFocused).catch(() => {})
+		const unlisten = win.onFocusChanged(({ payload }) => setFocused(payload))
+		return () => {
+			unlisten.then((fn) => fn())
+		}
+	}, [])
+
+	// Global notification listener: notify on inbound messages when the window isn't
+	// focused (covers minimized/background), or when focused but viewing another chat.
 	useEffect(() => {
 		const unlisten = api.onMessage((m) => {
 			if (!settings?.notifications_enabled) return
-			if (selected?.id === m.conversation_id) return
+			const viewingThis = focused && selected?.id === m.conversation_id
+			if (viewingThis) return
 			const conv = conversations.find((c) => c.id === m.conversation_id)
 			notify(conv?.title ?? "New message", m.body)
 		})
 		return () => {
 			unlisten.then((fn) => fn())
 		}
-	}, [settings, selected, conversations])
+	}, [settings, selected, conversations, focused])
 
 	async function lock() {
 		await api.lock()
