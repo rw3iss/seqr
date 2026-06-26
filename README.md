@@ -33,6 +33,23 @@ you can rotate or revoke at any time.
 
 ## Installing the app
 
+### Download a prebuilt installer (easiest)
+
+Tagged releases publish native installers via GitHub Actions — **macOS** (`.dmg`),
+Windows (`.msi`), and Linux (`.AppImage`/`.deb`). Grab the one for your OS from the
+repo's **Releases** page and install as usual.
+
+> **macOS first-launch note:** builds are unsigned, so macOS Gatekeeper will balk the
+> first time. Right-click the app → **Open** (or System Settings → Privacy & Security →
+> **Open Anyway**). After that it launches normally. The default mailbox URL and its
+> pinned certificate are compiled in, so it connects with no further setup.
+
+To cut a release yourself: `git tag v0.1.0 && git push origin v0.1.0` — the workflow in
+`.github/workflows/release.yml` builds and drafts the release. On a Mac you can also
+build locally in one command: `./scripts/setup-macos.sh`.
+
+### Build from source
+
 ### Prerequisites
 
 - [Rust](https://rustup.rs/) (stable) and [Node.js](https://nodejs.org/) 20+ with

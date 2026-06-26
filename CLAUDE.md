@@ -62,11 +62,27 @@ The encrypted mailbox is **deployed and running** on the user's server.
 - **Firewall:** `8787/tcp` open (firewalld)
 - **Health:** `curl http://37.27.248.79:8787/health` → `ok`
 
+- **TLS:** nginx terminates a **self-signed** cert on **:8443** → proxies to the
+  localhost mailbox. The client **pins the CA** (`config::DEFAULT_MAILBOX_CERT`, also
+  loadable from `<config-dir>/mailbox_cert.pem`); no public CA is trusted. Certs in
+  `/etc/seqr-mailbox/tls/` (`ca.pem` is the pinned one). Re-run
+  `services/mailbox/deploy/setup-tls.sh` to regenerate. Public `:8787` is firewalled
+  off; only `:8443` is reachable.
+
 **Manage:**
 ```bash
 ssh rw3iss@37.27.248.79 'sudo systemctl status seqr-mailbox'
 ssh rw3iss@37.27.248.79 'sudo journalctl -u seqr-mailbox -n 50'
+curl --cacert ~/.config/com.seqr.app/mailbox_cert.pem https://37.27.248.79:8443/health
 ```
+
+## Packaging / distribution
+
+- **CI:** `.github/workflows/release.yml` (tauri-action) builds macOS `.dmg` (universal),
+  Windows `.msi`, Linux `.AppImage`/`.deb` on a `v*` tag and drafts a GitHub Release.
+- **Local macOS build:** `./scripts/setup-macos.sh` → `apps/desktop/src-tauri/target/release/bundle/`.
+- Builds are **unsigned** (no Apple Developer cert); macOS users right-click → Open once.
+- macOS bundles **must be built on macOS/CI** — they can't be cross-built from Linux.
 
 **Redeploy after changes:**
 ```bash
