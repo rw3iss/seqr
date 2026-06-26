@@ -14,6 +14,7 @@
 pub mod config;
 pub mod conversation;
 pub mod identity;
+pub mod mailbox;
 pub mod message;
 pub mod session;
 pub mod transport;

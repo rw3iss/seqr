@@ -1126,6 +1126,7 @@ version = "0.1.0"
 dependencies = [
  "hex",
  "iroh",
+ "reqwest 0.12.28",
  "seqr-crypto",
  "seqr-protocol",
  "serde",

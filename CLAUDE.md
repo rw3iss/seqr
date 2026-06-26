@@ -115,9 +115,11 @@ A local `seqr.toml` is already written at `~/.config/com.seqr.app/seqr.toml`.
   pairwise session (`core/conversation.rs`), signed+sealed frames (`core/message.rs`),
   receive loop + UI events (`net.rs`), persisted history; `send_message`/`get_history`
   commands; live chat window. Verified by a two-endpoint loopback frame-exchange test.
-- ⏳ **M3 — mailbox client**: push/pull/ack wiring for offline delivery. The mailbox
-  service is deployed; the desktop side currently attempts direct delivery only and
-  logs (does not queue) on failure.
+- ✅ **M3 — mailbox client** (`core/mailbox.rs`): on send, direct delivery is tried
+  first; if the peer is unreachable the sealed frame is parked in the mailbox. A poll
+  loop (`net.rs`) pulls + acks queued messages every 5s while unlocked, dedup'd by
+  (conversation, sender, seq). Verified by a live round-trip test against the VPS
+  (`mailbox_live_roundtrip`, `--ignored`).
 - ⏳ **M4 — groups**: conversation generalisation, group-key distribution, fan-out, group UI.
 - ⏳ **M5 — rotation/revocation**: rotate/remove for 1:1 and groups, concurrent-rotation resolution.
 

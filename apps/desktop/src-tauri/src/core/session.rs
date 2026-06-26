@@ -22,13 +22,19 @@ pub struct Unlocked {
 /// toggle with login/lock.
 pub struct SessionState {
     pub data_dir: PathBuf,
+    pub mailbox_url: String,
     pub unlocked: Mutex<Option<Unlocked>>,
     pub transport: Mutex<Option<Transport>>,
 }
 
 impl SessionState {
-    pub fn new(data_dir: PathBuf) -> Self {
-        Self { data_dir, unlocked: Mutex::new(None), transport: Mutex::new(None) }
+    pub fn new(data_dir: PathBuf, mailbox_url: String) -> Self {
+        Self {
+            data_dir,
+            mailbox_url,
+            unlocked: Mutex::new(None),
+            transport: Mutex::new(None),
+        }
     }
 
     pub fn set_transport(&self, transport: Transport) {

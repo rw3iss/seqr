@@ -48,6 +48,10 @@ pub struct StoredMessage {
     /// Unix-millis timestamp.
     pub ts: u64,
     pub outgoing: bool,
+    /// Per-sender sequence number — used to deduplicate (a message may arrive both
+    /// directly and via the mailbox).
+    #[serde(default)]
+    pub seq: u64,
 }
 
 impl VaultData {
@@ -77,6 +81,17 @@ impl VaultData {
     /// Look up a friend by their Ed25519 (signing) public key.
     pub fn friend_by_signing(&self, signing_public: &str) -> Option<&Friend> {
         self.friends.iter().find(|f| f.signing_public == signing_public)
+    }
+
+    /// True if an incoming message with this (conversation, sender, seq) is already
+    /// stored — guards against the same message arriving twice (direct + mailbox).
+    pub fn has_incoming(&self, conversation_id: &str, sender: &str, seq: u64) -> bool {
+        self.messages.iter().any(|m| {
+            !m.outgoing
+                && m.conversation_id == conversation_id
+                && m.sender == sender
+                && m.seq == seq
+        })
     }
 }
 

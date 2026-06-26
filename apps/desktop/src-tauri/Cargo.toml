@@ -33,5 +33,9 @@ seqr-protocol = { path = "../../../crates/seqr-protocol" }
 # P2P transport: direct hole-punched QUIC with relay fallback.
 iroh = "=0.92"
 
+# Mailbox HTTP client (plain HTTP to the self-hosted helper; no TLS backend needed).
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+tokio = { version = "1", features = ["time"] }
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

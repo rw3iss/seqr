@@ -12,6 +12,7 @@ use tauri::{AppHandle, State};
 use seqr_protocol::ProfileBlob;
 
 use crate::core::config::AppConfig;
+use crate::core::mailbox::MailboxClient;
 use crate::core::session::SessionState;
 use crate::core::vault::{Friend, StoredMessage};
 use crate::core::{conversation, identity, message, now_millis, vault, CoreError, CoreResult};
@@ -141,6 +142,7 @@ pub async fn send_message(friend: String, body: String, state: Session<'_>) -> C
                 body: body.clone(),
                 ts: now_millis(),
                 outgoing: true,
+                seq,
             };
             u.data.add_message(msg.clone());
             vault::save(&data_dir, &u.vault_key, &u.data)?;
@@ -153,10 +155,17 @@ pub async fn send_message(friend: String, body: String, state: Session<'_>) -> C
         })?
     };
 
-    // Phase 2 (unlocked): attempt direct delivery. Failure is non-fatal for M2.
-    if let Some(transport) = state.transport() {
-        if let Err(e) = transport.send_to_id(&friend_signing, &frame_json).await {
-            eprintln!("seqr: delivery failed (peer offline?): {e}");
+    // Phase 2 (unlocked): try direct delivery; if the peer is unreachable, park the
+    // (already-sealed) frame in the mailbox for offline delivery.
+    let delivered = match state.transport() {
+        Some(transport) => transport.send_to_id(&friend_signing, &frame_json).await.is_ok(),
+        None => false,
+    };
+    if !delivered {
+        let payload = String::from_utf8(frame_json).unwrap_or_default();
+        let client = MailboxClient::new(&state.mailbox_url);
+        if let Err(e) = client.push(&friend, &payload).await {
+            eprintln!("seqr: mailbox push failed: {e}");
         }
     }
 
