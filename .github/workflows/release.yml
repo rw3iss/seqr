@@ -1,14 +1,20 @@
 name: Release installers
 
 # Build native installers (macOS .dmg/.app, Windows .msi, Linux .AppImage/.deb) and
-# attach them to a GitHub Release. Trigger by pushing a version tag, e.g.:
-#   git tag v0.1.0 && git push origin v0.1.0
-# or run manually from the Actions tab.
+# attach them to a GitHub Release.
+#
+# MANUAL ONLY: this repo is private, so Actions minutes are limited (macOS bills at
+# 10x). Tag pushes do NOT trigger builds. Run on demand from the Actions tab
+# ("Run workflow") or: gh workflow run "Release installers" --ref <tag>.
+# Local builds are the default — see scripts/setup-macos.sh and `pnpm tauri build`.
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag/ref to build (e.g. v0.1.2)"
+        required: false
+        default: ""
 
 jobs:
   build:
