@@ -1,0 +1,62 @@
+@use "../styles/tokens" as *;
+
+.modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.55);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 50;
+}
+
+.modal {
+	width: 420px;
+	background: $bg-panel;
+	border: 1px solid $border;
+	border-radius: $radius;
+	padding: $space-5;
+	display: flex;
+	flex-direction: column;
+	gap: $space-4;
+}
+
+.modal-tabs {
+	display: flex;
+	gap: $space-2;
+
+	button {
+		flex: 1;
+		background: transparent;
+
+		&.active {
+			background: $accent-quiet;
+			border-color: $accent;
+		}
+	}
+}
+
+.modal-body {
+	display: flex;
+	flex-direction: column;
+	gap: $space-3;
+
+	p { margin: 0; }
+}
+
+.token-box {
+	width: 100%;
+	font-family: $mono;
+	font-size: 11px;
+	word-break: break-all;
+	resize: vertical;
+}
+
+.modal-error {
+	margin: 0;
+	font-size: 13px;
+}
+
+.modal-close {
+	align-self: flex-end;
+}

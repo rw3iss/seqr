@@ -1,0 +1,12 @@
+# Seqr configuration example.
+#
+# Copy to your OS config directory as `seqr.toml`:
+#   Linux:   ~/.config/com.seqr.app/seqr.toml
+#   macOS:   ~/Library/Application Support/com.seqr.app/seqr.toml
+#   Windows: %APPDATA%\com.seqr.app\seqr.toml
+#
+# Or override at runtime with the SEQR_MAILBOX_URL environment variable.
+# If neither is present, the app falls back to the compiled-in default.
+
+# URL of your self-hosted mailbox helper (see services/mailbox).
+mailbox_url = "http://37.27.248.79:8787"

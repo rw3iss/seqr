@@ -1,0 +1,26 @@
+// Design tokens — the single source of colour, spacing, and type for Seqr.
+// Components reference these variables; no raw hex or magic numbers elsewhere.
+
+$bg:            #0f1115;
+$bg-panel:      #161a21;
+$bg-elevated:   #1d222b;
+$border:        #283040;
+$text:          #e6e9ef;
+$text-muted:    #8b94a7;
+$accent:        #5b8cff;
+$accent-quiet:  #2a3550;
+$danger:        #ff6b6b;
+$success:       #54d18c;
+
+$radius:        10px;
+$radius-sm:     6px;
+
+$space-1:       4px;
+$space-2:       8px;
+$space-3:       12px;
+$space-4:       16px;
+$space-5:       24px;
+$space-6:       32px;
+
+$font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+$mono: "SFMono-Regular", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;

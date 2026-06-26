@@ -1,0 +1,56 @@
+@use "./tokens" as *;
+
+* {
+	box-sizing: border-box;
+}
+
+html, body, #root {
+	height: 100%;
+	margin: 0;
+}
+
+body {
+	background: $bg;
+	color: $text;
+	font-family: $font;
+	font-size: 14px;
+	-webkit-font-smoothing: antialiased;
+}
+
+button {
+	font-family: inherit;
+	cursor: pointer;
+	border: 1px solid $border;
+	background: $bg-elevated;
+	color: $text;
+	padding: $space-2 $space-4;
+	border-radius: $radius-sm;
+
+	&:hover { border-color: $accent; }
+	&:disabled { opacity: 0.5; cursor: not-allowed; }
+
+	&.primary {
+		background: $accent;
+		border-color: $accent;
+		color: #fff;
+	}
+	&.danger {
+		border-color: $danger;
+		color: $danger;
+		background: transparent;
+	}
+}
+
+input, textarea {
+	font-family: inherit;
+	background: $bg;
+	color: $text;
+	border: 1px solid $border;
+	border-radius: $radius-sm;
+	padding: $space-2 $space-3;
+
+	&:focus { outline: none; border-color: $accent; }
+}
+
+.error-text { color: $danger; }
+.muted { color: $text-muted; }

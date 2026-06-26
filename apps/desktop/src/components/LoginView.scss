@@ -1,0 +1,57 @@
+@use "../styles/tokens" as *;
+
+.login-view {
+	height: 100%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.login-card {
+	width: 340px;
+	display: flex;
+	flex-direction: column;
+	gap: $space-4;
+	padding: $space-6;
+	background: $bg-panel;
+	border: 1px solid $border;
+	border-radius: $radius;
+}
+
+.login-brand {
+	margin: 0;
+	font-size: 34px;
+	letter-spacing: 2px;
+	text-align: center;
+	color: $accent;
+}
+
+.login-sub {
+	margin: 0;
+	text-align: center;
+}
+
+.login-field {
+	display: flex;
+	flex-direction: column;
+	gap: $space-1;
+
+	span { font-size: 12px; color: $text-muted; }
+	input { width: 100%; }
+}
+
+.login-error {
+	margin: 0;
+	font-size: 13px;
+}
+
+.login-submit {
+	margin-top: $space-1;
+}
+
+.login-note {
+	margin: 0;
+	font-size: 11px;
+	text-align: center;
+	line-height: 1.5;
+}

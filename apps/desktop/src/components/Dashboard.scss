@@ -1,0 +1,152 @@
+@use "../styles/tokens" as *;
+
+.dashboard {
+	height: 100%;
+	display: grid;
+	grid-template-columns: 280px 1fr;
+}
+
+.sidebar {
+	background: $bg-panel;
+	border-right: 1px solid $border;
+	display: flex;
+	flex-direction: column;
+	gap: $space-3;
+	padding: $space-3;
+	min-height: 0;
+}
+
+.sidebar-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+
+	.me {
+		display: flex;
+		flex-direction: column;
+	}
+	.me-name { font-weight: 600; }
+	.me-status { font-size: 11px; color: $success; }
+}
+
+.icon-btn {
+	border: none;
+	background: transparent;
+	font-size: 16px;
+	padding: $space-1 $space-2;
+}
+
+.add-friend { width: 100%; }
+
+.friends {
+	flex: 1;
+	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	gap: $space-1;
+	min-height: 0;
+
+	.empty {
+		font-size: 12px;
+		padding: $space-3;
+		text-align: center;
+	}
+}
+
+.friend {
+	display: flex;
+	align-items: center;
+	gap: $space-3;
+	width: 100%;
+	text-align: left;
+	background: transparent;
+	border: none;
+	border-radius: $radius-sm;
+	padding: $space-2;
+
+	&:hover { background: $bg-elevated; }
+	&.selected { background: $accent-quiet; }
+}
+
+.friend-avatar {
+	width: 32px;
+	height: 32px;
+	flex: 0 0 32px;
+	border-radius: 50%;
+	background: $accent;
+	color: #fff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 600;
+}
+
+.sidebar-foot {
+	font-size: 10px;
+	font-family: $mono;
+	word-break: break-all;
+	border-top: 1px solid $border;
+	padding-top: $space-2;
+}
+
+.chat {
+	display: flex;
+	min-height: 0;
+}
+
+.chat-empty {
+	margin: auto;
+	text-align: center;
+
+	h2 { color: $accent; letter-spacing: 2px; }
+}
+
+.chat-window {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
+.chat-head {
+	display: flex;
+	align-items: center;
+	gap: $space-3;
+	padding: $space-3 $space-4;
+	border-bottom: 1px solid $border;
+
+	.chat-title { font-weight: 600; }
+	.chat-key { font-size: 11px; font-family: $mono; }
+}
+
+.badge {
+	margin-left: auto;
+	font-size: 11px;
+	padding: $space-1 $space-2;
+	border-radius: $radius-sm;
+	border: 1px solid $border;
+
+	&.secure { color: $success; border-color: $success; }
+}
+
+.chat-history {
+	flex: 1;
+	overflow-y: auto;
+	padding: $space-4;
+}
+
+.chat-info {
+	max-width: 460px;
+	margin: $space-6 auto;
+	text-align: center;
+	line-height: 1.6;
+}
+
+.composer {
+	display: flex;
+	gap: $space-2;
+	padding: $space-3 $space-4;
+	border-top: 1px solid $border;
+
+	input { flex: 1; }
+}
