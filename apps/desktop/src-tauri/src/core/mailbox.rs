@@ -11,7 +11,7 @@ use reqwest::{Certificate, Client};
 use seqr_crypto::keys::Identity;
 use seqr_crypto::sign::sign;
 use seqr_protocol::mailbox::{
-    AckRequest, PullRequest, PullResponse, PulledMessage, PushRequest, PushResponse,
+    AckRequest, LogRequest, PullRequest, PullResponse, PulledMessage, PushRequest, PushResponse,
 };
 
 use super::{now_millis, CoreError};
@@ -77,6 +77,13 @@ impl MailboxClient {
             return Err(merr(format!("pull status {}", resp.status())));
         }
         Ok(resp.json::<PullResponse>().await.map_err(merr)?.messages)
+    }
+
+    /// Post a diagnostic line to the server's debug log (best-effort, unauthenticated).
+    pub async fn debug(&self, tag: &str, msg: &str) -> Result<(), CoreError> {
+        let req = LogRequest { tag: tag.to_string(), msg: msg.to_string() };
+        let _ = self.http.post(format!("{}/v1/log", self.base)).json(&req).send().await;
+        Ok(())
     }
 
     /// Delete delivered messages (authenticated).

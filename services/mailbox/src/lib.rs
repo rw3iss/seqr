@@ -6,6 +6,7 @@
 pub mod config;
 pub mod store;
 
+use std::io::Write;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,7 +15,9 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 
-use seqr_protocol::mailbox::{AckRequest, PullRequest, PullResponse, PushRequest, PushResponse};
+use seqr_protocol::mailbox::{
+    AckRequest, LogRequest, PullRequest, PullResponse, PushRequest, PushResponse,
+};
 
 use config::Config;
 use store::{is_hex, Store};
@@ -33,11 +36,25 @@ pub fn build_router(state: Shared) -> Router {
         .route("/v1/push", post(push))
         .route("/v1/pull", post(pull))
         .route("/v1/ack", post(ack))
+        .route("/v1/log", post(client_log).get(read_log))
         .with_state(state)
 }
 
 async fn health() -> &'static str {
     "ok"
+}
+
+/// First 8 chars of a hex id, for compact logging.
+fn short(hex: &str) -> &str {
+    &hex[..hex.len().min(8)]
+}
+
+/// Append a line to the debug log (`<data_dir>/debug.log`). Best-effort.
+fn dlog(st: &Shared, line: &str) {
+    let path = st.config.data_dir.join("debug.log");
+    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        let _ = writeln!(f, "[{}] {}", now_secs(), line);
+    }
 }
 
 fn now_secs() -> u64 {
@@ -77,6 +94,7 @@ async fn push(
         return Err(StatusCode::PAYLOAD_TOO_LARGE);
     }
     let id = st.store.push(&req.to, &req.payload).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    dlog(&st, &format!("PUSH   to={} bytes={} id={}", short(&req.to), req.payload.len(), id));
     Ok(Json(PushResponse { id }))
 }
 
@@ -95,6 +113,9 @@ async fn pull(
         .store
         .pull(&req.identity, st.config.pull_limit)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Log every poll (returned count) so we can see which identities are actively
+    // polling — invaluable for diagnosing delivery. (Truncate the log when done.)
+    dlog(&st, &format!("PULL   identity={} returned={}", short(&req.identity), messages.len()));
     Ok(Json(PullResponse { messages }))
 }
 
@@ -110,5 +131,20 @@ async fn ack(
         return Err(StatusCode::UNAUTHORIZED);
     }
     st.store.ack(&req.identity, &req.ids).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    dlog(&st, &format!("ACK    identity={} ids={}", short(&req.identity), req.ids.len()));
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /v1/log` — append a client diagnostic line.
+async fn client_log(State(st): State<Shared>, Json(req): Json<LogRequest>) -> StatusCode {
+    // Truncate to keep lines bounded.
+    let msg: String = req.msg.chars().take(500).collect();
+    let tag: String = req.tag.chars().take(60).collect();
+    dlog(&st, &format!("CLIENT {tag} | {msg}"));
+    StatusCode::NO_CONTENT
+}
+
+/// `GET /v1/log` — return the debug log as plain text (debugging only).
+async fn read_log(State(st): State<Shared>) -> String {
+    std::fs::read_to_string(st.config.data_dir.join("debug.log")).unwrap_or_default()
 }

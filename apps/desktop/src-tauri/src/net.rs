@@ -24,6 +24,29 @@ pub const GROUP_EVENT: &str = "seqr://group";
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
+/// First 8 hex chars, for compact logging.
+fn short(hex: &str) -> String {
+    hex.chars().take(8).collect()
+}
+
+/// Emit a diagnostic line to stderr AND the mailbox's central debug log, tagged with
+/// this account's identity so both machines are distinguishable. Best-effort.
+pub fn debug_log(state: &Arc<SessionState>, msg: impl Into<String>) {
+    let msg = msg.into();
+    let tag = state
+        .with_unlocked(|u| {
+            let p = u.data.identity()?.public().signing_public;
+            Ok(format!("{}/{}", u.data.display_name, short(&hex::encode(p))))
+        })
+        .unwrap_or_else(|_| "?".to_string());
+    eprintln!("seqr[{tag}]: {msg}");
+    let (url, cert) = (state.mailbox_url.clone(), state.mailbox_cert.clone());
+    tauri::async_runtime::spawn(async move {
+        let client = MailboxClient::new(&url, cert.as_deref());
+        let _ = client.debug(&tag, &msg).await;
+    });
+}
+
 /// Start the transport for the unlocked account; spawn the accept and poll loops.
 pub async fn start_transport(
     state: Arc<SessionState>,
@@ -31,7 +54,9 @@ pub async fn start_transport(
     signing_secret: [u8; 32],
 ) -> Result<(), CoreError> {
     let transport = Transport::start(&signing_secret).await?;
+    let endpoint_id = hex::encode(transport.id().as_bytes());
     state.set_transport(transport.clone());
+    debug_log(&state, format!("transport up, endpoint_id={}", short(&endpoint_id)));
     tauri::async_runtime::spawn(accept_loop(transport, state.clone(), app.clone()));
     tauri::async_runtime::spawn(poll_mailbox_loop(state, app));
     Ok(())
@@ -43,18 +68,28 @@ pub async fn deliver(state: &Arc<SessionState>, recipient_hex: &str, payload: &[
     let signing: Option<[u8; 32]> =
         hex::decode(recipient_hex).ok().and_then(|v| v.try_into().ok());
     let Some(signing) = signing else {
-        eprintln!("seqr: bad recipient key {recipient_hex}");
+        debug_log(state, format!("deliver ABORT: bad recipient {}", short(recipient_hex)));
         return;
     };
-    let delivered = match state.transport() {
-        Some(t) => t.send_to_id(&signing, payload).await.is_ok(),
+    let direct = match state.transport() {
+        Some(t) => match t.send_to_id(&signing, payload).await {
+            Ok(()) => {
+                debug_log(state, format!("deliver: DIRECT ok -> {}", short(recipient_hex)));
+                true
+            }
+            Err(e) => {
+                debug_log(state, format!("deliver: direct failed -> {} ({e})", short(recipient_hex)));
+                false
+            }
+        },
         None => false,
     };
-    if !delivered {
+    if !direct {
         let client = MailboxClient::new(&state.mailbox_url, state.mailbox_cert.as_deref());
         let payload_str = String::from_utf8_lossy(payload).to_string();
-        if let Err(e) = client.push(recipient_hex, &payload_str).await {
-            eprintln!("seqr: mailbox push failed: {e}");
+        match client.push(recipient_hex, &payload_str).await {
+            Ok(id) => debug_log(state, format!("deliver: MAILBOX push ok -> {} (id={id})", short(recipient_hex))),
+            Err(e) => debug_log(state, format!("deliver: mailbox push FAILED -> {} ({e})", short(recipient_hex))),
         }
     }
 }
@@ -65,8 +100,8 @@ async fn accept_loop(transport: Transport, state: Arc<SessionState>, app: AppHan
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             match recv_frame(&conn).await {
-                Ok(bytes) => emit_inbound(&state, &app, &bytes),
-                Err(e) => eprintln!("seqr: recv error: {e}"),
+                Ok(bytes) => emit_inbound(&state, &app, &bytes, "direct"),
+                Err(e) => debug_log(&state, format!("accept: recv error ({e})")),
             }
         });
     }
@@ -84,16 +119,19 @@ async fn poll_mailbox_loop(state: Arc<SessionState>, app: AppHandle) {
         };
         match client.pull(&identity).await {
             Ok(messages) => {
+                if !messages.is_empty() {
+                    debug_log(&state, format!("poll: pulled {} from mailbox", messages.len()));
+                }
                 let mut ids = Vec::with_capacity(messages.len());
                 for m in &messages {
-                    emit_inbound(&state, &app, m.payload.as_bytes());
+                    emit_inbound(&state, &app, m.payload.as_bytes(), "mailbox");
                     ids.push(m.id.clone());
                 }
                 if let Err(e) = client.ack(&identity, ids).await {
-                    eprintln!("seqr: mailbox ack failed: {e}");
+                    debug_log(&state, format!("poll: ack failed ({e})"));
                 }
             }
-            Err(e) => eprintln!("seqr: mailbox pull failed: {e}"),
+            Err(e) => debug_log(&state, format!("poll: pull failed ({e})")),
         }
         tokio::time::sleep(POLL_INTERVAL).await;
     }
@@ -116,16 +154,23 @@ enum Inbound {
     Nothing,
 }
 
-fn emit_inbound(state: &Arc<SessionState>, app: &AppHandle, bytes: &[u8]) {
+fn emit_inbound(state: &Arc<SessionState>, app: &AppHandle, bytes: &[u8], source: &str) {
     match process_incoming(state, bytes) {
         Ok(Inbound::Message(m)) => {
+            debug_log(
+                state,
+                format!("RECV[{source}] msg from {} conv={}", short(&m.sender), short(&m.conversation_id)),
+            );
             let _ = app.emit(MESSAGE_EVENT, &m);
         }
         Ok(Inbound::GroupUpdated(id)) => {
+            debug_log(state, format!("RECV[{source}] group update {}", short(&id)));
             let _ = app.emit(GROUP_EVENT, &id);
         }
-        Ok(Inbound::Nothing) => {}
-        Err(e) => eprintln!("seqr: dropped inbound packet: {e}"),
+        Ok(Inbound::Nothing) => {
+            debug_log(state, format!("RECV[{source}] duplicate/ignored"));
+        }
+        Err(e) => debug_log(state, format!("RECV[{source}] DROPPED: {e}")),
     }
 }
 

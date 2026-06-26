@@ -72,3 +72,11 @@ impl AckRequest {
         format!("seqr/ack/v1|{identity}|{ts}|{}", ids.join(",")).into_bytes()
     }
 }
+
+/// `POST /v1/log` — best-effort diagnostic logging. Clients post a tag (who they are)
+/// and a message; the server appends it to a debug file. No auth (debugging only).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogRequest {
+    pub tag: String,
+    pub msg: String,
+}

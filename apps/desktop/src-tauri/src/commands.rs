@@ -186,6 +186,10 @@ pub async fn send_message(friend: String, body: String, state: Session<'_>) -> C
             Ok((msg, Packet::Message(frame).to_json()))
         })?
     };
+    net::debug_log(
+        state.inner(),
+        format!("SEND 1:1 -> {} seq={}", &friend.chars().take(8).collect::<String>(), stored.seq),
+    );
     net::deliver(state.inner(), &friend, &packet_json).await;
     Ok(stored)
 }
