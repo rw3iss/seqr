@@ -8,6 +8,7 @@ use std::sync::Mutex;
 
 use seqr_crypto::SymmetricKey;
 
+use super::transport::Transport;
 use super::vault::VaultData;
 use super::{CoreError, CoreResult};
 
@@ -17,16 +18,26 @@ pub struct Unlocked {
     pub data: VaultData,
 }
 
-/// Shared application state. `data_dir` is fixed at startup; `unlocked` toggles with
-/// login/lock.
+/// Shared application state. `data_dir` is fixed at startup; `unlocked` and `transport`
+/// toggle with login/lock.
 pub struct SessionState {
     pub data_dir: PathBuf,
     pub unlocked: Mutex<Option<Unlocked>>,
+    pub transport: Mutex<Option<Transport>>,
 }
 
 impl SessionState {
     pub fn new(data_dir: PathBuf) -> Self {
-        Self { data_dir, unlocked: Mutex::new(None) }
+        Self { data_dir, unlocked: Mutex::new(None), transport: Mutex::new(None) }
+    }
+
+    pub fn set_transport(&self, transport: Transport) {
+        *self.transport.lock().expect("transport mutex") = Some(transport);
+    }
+
+    /// Clone of the live transport, if started.
+    pub fn transport(&self) -> Option<Transport> {
+        self.transport.lock().expect("transport mutex").clone()
     }
 
     /// Run a closure against the unlocked account, erroring if locked.
@@ -42,6 +53,8 @@ impl SessionState {
 
     pub fn lock(&self) {
         *self.unlocked.lock().expect("session mutex") = None;
+        // Drop the transport handle; the endpoint shuts down once all clones are gone.
+        *self.transport.lock().expect("transport mutex") = None;
     }
 
     pub fn is_unlocked(&self) -> bool {

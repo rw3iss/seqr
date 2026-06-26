@@ -133,6 +133,8 @@
 	flex: 1;
 	overflow-y: auto;
 	padding: $space-4;
+	display: flex;
+	flex-direction: column;
 }
 
 .chat-info {
@@ -140,6 +142,38 @@
 	margin: $space-6 auto;
 	text-align: center;
 	line-height: 1.6;
+}
+
+.bubble {
+	max-width: 70%;
+	margin-bottom: $space-2;
+	padding: $space-2 $space-3;
+	border-radius: $radius;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+
+	.bubble-body { white-space: pre-wrap; word-break: break-word; }
+	.bubble-time { font-size: 10px; color: $text-muted; align-self: flex-end; }
+
+	&.in {
+		background: $bg-elevated;
+		border: 1px solid $border;
+		align-self: flex-start;
+		margin-right: auto;
+	}
+	&.out {
+		background: $accent-quiet;
+		border: 1px solid $accent;
+		align-self: flex-end;
+		margin-left: auto;
+	}
+}
+
+.chat-error {
+	margin: 0;
+	padding: 0 $space-4 $space-2;
+	font-size: 12px;
 }
 
 .composer {

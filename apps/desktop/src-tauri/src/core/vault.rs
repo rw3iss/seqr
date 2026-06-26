@@ -28,9 +28,56 @@ pub struct VaultData {
     pub agreement_secret: String,
     /// Hex of the Ed25519 secret (signing).
     pub signing_secret: String,
-    /// iroh node address; empty until the transport milestone populates it.
+    /// iroh endpoint id (z-base-32); populated once the transport starts.
     pub node_addr: String,
     pub friends: Vec<Friend>,
+    /// Chat history across all conversations. New field — `serde(default)` keeps older
+    /// vault files loadable.
+    #[serde(default)]
+    pub messages: Vec<StoredMessage>,
+}
+
+/// One stored message in a conversation's history (plaintext at rest within the
+/// already-encrypted vault).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoredMessage {
+    pub conversation_id: String,
+    /// Sender's Ed25519 public key, hex (equals our own for outgoing messages).
+    pub sender: String,
+    pub body: String,
+    /// Unix-millis timestamp.
+    pub ts: u64,
+    pub outgoing: bool,
+}
+
+impl VaultData {
+    /// Append a message and return how many outgoing messages now exist in its
+    /// conversation (useful as the next sequence number).
+    pub fn add_message(&mut self, msg: StoredMessage) {
+        self.messages.push(msg);
+    }
+
+    /// Messages for one conversation, in stored (chronological) order.
+    pub fn history(&self, conversation_id: &str) -> Vec<StoredMessage> {
+        self.messages
+            .iter()
+            .filter(|m| m.conversation_id == conversation_id)
+            .cloned()
+            .collect()
+    }
+
+    /// Count of outgoing messages in a conversation — the next outgoing seq number.
+    pub fn next_seq(&self, conversation_id: &str) -> u64 {
+        self.messages
+            .iter()
+            .filter(|m| m.conversation_id == conversation_id && m.outgoing)
+            .count() as u64
+    }
+
+    /// Look up a friend by their Ed25519 (signing) public key.
+    pub fn friend_by_signing(&self, signing_public: &str) -> Option<&Friend> {
+        self.friends.iter().find(|f| f.signing_public == signing_public)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,6 +134,7 @@ pub fn create(data_dir: &Path, display_name: &str, password: &str) -> Result<(Sy
         signing_secret: hex::encode(signing),
         node_addr: String::new(),
         friends: Vec::new(),
+        messages: Vec::new(),
     };
 
     let salt = kdf::generate_salt();

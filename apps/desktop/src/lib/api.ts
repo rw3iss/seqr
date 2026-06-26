@@ -2,6 +2,9 @@
 // functions, never to `invoke` directly, so the command contract lives in one place.
 
 import { invoke } from "@tauri-apps/api/core"
+import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+
+export const MESSAGE_EVENT = "seqr://message"
 
 export interface ProfileBlob {
 	v: number
@@ -27,6 +30,14 @@ export interface AppConfig {
 	mailbox_url: string
 }
 
+export interface StoredMessage {
+	conversation_id: string
+	sender: string
+	body: string
+	ts: number
+	outgoing: boolean
+}
+
 export const api = {
 	appStatus: (): Promise<AppStatus> => invoke("app_status"),
 	appConfig: (): Promise<AppConfig> => invoke("app_config"),
@@ -38,6 +49,11 @@ export const api = {
 	exportProfile: (): Promise<string> => invoke("export_profile"),
 	importFriend: (token: string): Promise<Friend> => invoke("import_friend", { token }),
 	listFriends: (): Promise<Friend[]> => invoke("list_friends"),
+	getHistory: (friend: string): Promise<StoredMessage[]> => invoke("get_history", { friend }),
+	sendMessage: (friend: string, body: string): Promise<StoredMessage> =>
+		invoke("send_message", { friend, body }),
+	onMessage: (cb: (m: StoredMessage) => void): Promise<UnlistenFn> =>
+		listen<StoredMessage>(MESSAGE_EVENT, (e) => cb(e.payload)),
 }
 
 // Tauri rejects with the CoreError string; normalize for display.

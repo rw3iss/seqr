@@ -108,11 +108,27 @@ A local `seqr.toml` is already written at `~/.config/com.seqr.app/seqr.toml`.
 
 ## Milestone status
 
-- ✅ **M1 — vault + identity + friends + UI shell** (done): encrypted vault, account
+- ✅ **M1 — vault + identity + friends + UI shell**: encrypted vault, account
   create/unlock, profile export/import, friends roster, two-pane dashboard.
 - ✅ **VPS mailbox** built, tested, deployed, verified reachable.
-- ⏳ **M2 — live 1:1 transport**: iroh connection, ECDH session, signed+sealed
-  send/receive, message history in the vault.
-- ⏳ **M3 — mailbox client**: push/pull/ack wiring for offline delivery.
+- ✅ **M2 — live 1:1 transport**: iroh QUIC connection (`core/transport.rs`), ECDH
+  pairwise session (`core/conversation.rs`), signed+sealed frames (`core/message.rs`),
+  receive loop + UI events (`net.rs`), persisted history; `send_message`/`get_history`
+  commands; live chat window. Verified by a two-endpoint loopback frame-exchange test.
+- ⏳ **M3 — mailbox client**: push/pull/ack wiring for offline delivery. The mailbox
+  service is deployed; the desktop side currently attempts direct delivery only and
+  logs (does not queue) on failure.
 - ⏳ **M4 — groups**: conversation generalisation, group-key distribution, fan-out, group UI.
 - ⏳ **M5 — rotation/revocation**: rotate/remove for 1:1 and groups, concurrent-rotation resolution.
+
+## ⚠️ iroh version constraint
+
+`apps/desktop/src-tauri` pins **`iroh = "=0.92"`**. Do NOT bump to 0.93+:
+- 0.93/0.94 fail to resolve here; **0.95 depends on `ed25519-dalek 3.0.0-pre.1`**, a
+  prerelease that does not compile against current `pkcs8` and conflicts with the
+  stable `ed25519-dalek 2.x` used by `seqr-crypto`.
+- 0.92 is the newest release on stable dalek 2.x. It predates the `NodeId`→`EndpointId`
+  / `NodeAddr`→`EndpointAddr` rename, so transport code uses the **`NodeId`/`NodeAddr`**
+  API (`endpoint.node_id()`, `endpoint.node_addr().initialized().await`).
+- Revisit once iroh ships a stable release on `ed25519-dalek 3.x` (then bump
+  `seqr-crypto` too and migrate to the `EndpointId` API).

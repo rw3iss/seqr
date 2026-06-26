@@ -12,8 +12,11 @@
 //! send/receive are scaffolded in the spec and land in later milestones.
 
 pub mod config;
+pub mod conversation;
 pub mod identity;
+pub mod message;
 pub mod session;
+pub mod transport;
 pub mod vault;
 
 #[derive(Debug, thiserror::Error)]
@@ -34,6 +37,10 @@ pub enum CoreError {
     Storage(String),
     #[error("crypto error: {0}")]
     Crypto(String),
+    #[error("transport error: {0}")]
+    Transport(String),
+    #[error("unknown sender — not in your friends list")]
+    UnknownSender,
 }
 
 impl From<seqr_crypto::CryptoError> for CoreError {
@@ -56,3 +63,9 @@ impl serde::Serialize for CoreError {
 }
 
 pub type CoreResult<T> = Result<T, CoreError>;
+
+/// Current Unix time in milliseconds.
+pub fn now_millis() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}

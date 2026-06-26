@@ -29,3 +29,9 @@ hex = "0.4"
 # backend workspace so the GUI toolchain stays isolated).
 seqr-crypto = { path = "../../../crates/seqr-crypto" }
 seqr-protocol = { path = "../../../crates/seqr-protocol" }
+
+# P2P transport: direct hole-punched QUIC with relay fallback.
+iroh = "=0.92"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

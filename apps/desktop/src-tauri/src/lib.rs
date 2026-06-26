@@ -6,6 +6,9 @@
 
 mod commands;
 mod core;
+mod net;
+
+use std::sync::Arc;
 
 use tauri::Manager;
 
@@ -25,7 +28,7 @@ pub fn run() {
 
             let config = AppConfig::resolve(&config_dir.join("seqr.toml"));
             app.manage(config);
-            app.manage(SessionState::new(data_dir));
+            app.manage(Arc::new(SessionState::new(data_dir)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -38,6 +41,8 @@ pub fn run() {
             commands::export_profile,
             commands::import_friend,
             commands::list_friends,
+            commands::get_history,
+            commands::send_message,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -27,6 +27,12 @@ pub fn derive_pairwise(my_secret: &StaticSecret, their_public: &PublicKey) -> Sy
     key
 }
 
+/// Convenience: derive from the peer's raw 32-byte X25519 public key, so callers need
+/// not depend on `x25519-dalek` directly.
+pub fn derive_pairwise_bytes(my_secret: &StaticSecret, their_public: &[u8; 32]) -> SymmetricKey {
+    derive_pairwise(my_secret, &PublicKey::from(*their_public))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
