@@ -32,6 +32,13 @@ export interface AppConfig {
 	mailbox_url: string
 }
 
+export interface AttachmentInfo {
+	id: string
+	filename: string
+	mime: string
+	size: number
+}
+
 export interface StoredMessage {
 	conversation_id: string
 	sender: string
@@ -39,6 +46,7 @@ export interface StoredMessage {
 	ts: number
 	outgoing: boolean
 	seq: number
+	attachment: AttachmentInfo | null
 }
 
 export interface Conversation {
@@ -51,6 +59,7 @@ export interface Conversation {
 
 export interface Settings {
 	notifications_enabled: boolean
+	enter_sends: boolean
 }
 
 export const api = {
@@ -76,6 +85,10 @@ export const api = {
 	safetyNumber: (friend: string): Promise<string> => invoke("safety_number", { friend }),
 	sendMessage: (friend: string, body: string): Promise<StoredMessage> =>
 		invoke("send_message", { friend, body }),
+	sendAttachment: (conversationId: string, path: string): Promise<StoredMessage> =>
+		invoke("send_attachment", { conversationId, path }),
+	readAttachment: (attId: string): Promise<string> => invoke("read_attachment", { attId }),
+	openAttachment: (attId: string): Promise<void> => invoke("open_attachment", { attId }),
 	createGroup: (name: string, members: string[]): Promise<Conversation> =>
 		invoke("create_group", { name, members }),
 	sendGroupMessage: (groupId: string, body: string): Promise<StoredMessage> =>

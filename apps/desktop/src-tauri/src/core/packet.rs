@@ -22,6 +22,52 @@ pub enum Packet {
     /// "I added you — add me back?" Carries the requester's signed public profile.
     /// Accepted from *unknown* senders (that's the point) after signature verification.
     FriendRequest(FriendRequest),
+    /// Header announcing an incoming attachment (followed by AttachmentChunk packets).
+    AttachmentMeta(AttachmentMeta),
+    /// One encrypted chunk of an attachment.
+    AttachmentChunk(AttachmentChunk),
+}
+
+/// Announces an attachment: its identity, the conversation/epoch it belongs to, and how
+/// many chunks to expect. Signed by the sender (binds the metadata to the identity).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentMeta {
+    pub att_id: String,
+    pub conversation_id: String,
+    pub epoch: u64,
+    pub sender: String,
+    pub seq: u64,
+    pub filename: String,
+    pub mime: String,
+    pub size: u64,
+    pub chunks: u32,
+    pub signature: String,
+}
+
+impl AttachmentMeta {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        format!(
+            "seqr/attmeta/v1|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            self.att_id,
+            self.conversation_id,
+            self.epoch,
+            self.sender,
+            self.seq,
+            self.filename,
+            self.mime,
+            self.size,
+            self.chunks
+        )
+        .into_bytes()
+    }
+}
+
+/// One encrypted attachment chunk (`data` is hex of `seal_chunk` output).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttachmentChunk {
+    pub att_id: String,
+    pub index: u32,
+    pub data: String,
 }
 
 /// A friend request: the requester's public profile, signed by their identity key so

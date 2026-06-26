@@ -29,6 +29,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             // Per-user, OS-appropriate locations (e.g. ~/.local/share/com.seqr.app).
             let data_dir = app.path().app_data_dir().expect("resolve app data dir");
@@ -63,6 +64,9 @@ pub fn run() {
             commands::group_members,
             commands::safety_number,
             commands::send_message,
+            commands::send_attachment,
+            commands::read_attachment,
+            commands::open_attachment,
             commands::create_group,
             commands::send_group_message,
             commands::rotate_direct,

@@ -11,6 +11,7 @@
 //! transport (iroh), the mailbox client, group key distribution, and message
 //! send/receive are scaffolded in the spec and land in later milestones.
 
+pub mod attachment;
 pub mod config;
 pub mod conversation;
 pub mod group;

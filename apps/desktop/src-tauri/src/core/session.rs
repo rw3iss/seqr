@@ -3,11 +3,13 @@
 //! Holds the derived vault key and decrypted [`VaultData`] only while the app is
 //! unlocked; locking clears it. Guarded by a mutex and shared as Tauri managed state.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use seqr_crypto::SymmetricKey;
 
+use super::attachment::Reassembler;
 use super::transport::Transport;
 use super::vault::VaultData;
 use super::{CoreError, CoreResult};
@@ -27,6 +29,8 @@ pub struct SessionState {
     pub mailbox_cert: Option<String>,
     pub unlocked: Mutex<Option<Unlocked>>,
     pub transport: Mutex<Option<Transport>>,
+    /// In-flight attachment reassembly, keyed by attachment id.
+    pub reassembly: Mutex<HashMap<String, Reassembler>>,
 }
 
 impl SessionState {
@@ -37,6 +41,7 @@ impl SessionState {
             mailbox_cert,
             unlocked: Mutex::new(None),
             transport: Mutex::new(None),
+            reassembly: Mutex::new(HashMap::new()),
         }
     }
 

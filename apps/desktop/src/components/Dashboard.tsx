@@ -7,6 +7,7 @@ import {
 	api,
 	errMessage,
 	type AppConfig,
+	type AttachmentInfo,
 	type Conversation,
 	type ProfileBlob,
 	type Settings,
@@ -19,6 +20,8 @@ import { FriendRequests } from "./FriendRequests"
 import { SettingsModal } from "./SettingsModal"
 import { ensureNotificationPermission, notify } from "../lib/notify"
 import { getCurrentWindow } from "@tauri-apps/api/window"
+import { getCurrentWebview } from "@tauri-apps/api/webview"
+import { open } from "@tauri-apps/plugin-dialog"
 import type { Friend } from "../lib/api"
 import "./Dashboard.scss"
 
@@ -138,6 +141,7 @@ export function Dashboard({ profile, onLocked }: Props) {
 					<ChatWindow
 						key={selected.id}
 						conversation={selected}
+						settings={settings}
 						onRemoved={() => {
 							setSelected(null)
 							refresh()
@@ -162,13 +166,16 @@ export function Dashboard({ profile, onLocked }: Props) {
 
 function ChatWindow({
 	conversation,
+	settings,
 	onRemoved,
 }: {
 	conversation: Conversation
+	settings: Settings | null
 	onRemoved: () => void
 }) {
 	const [messages, setMessages] = useState<StoredMessage[]>([])
 	const [draft, setDraft] = useState("")
+	const [staged, setStaged] = useState<string[]>([])
 	const [sending, setSending] = useState(false)
 	const [error, setError] = useState("")
 	const [notice, setNotice] = useState("")
@@ -177,6 +184,7 @@ function ChatWindow({
 	const historyRef = useRef<HTMLDivElement>(null)
 
 	const isGroup = conversation.kind === "group"
+	const enterSends = settings?.enter_sends ?? true
 
 	function refreshMembers() {
 		if (isGroup) api.groupMembers(conversation.id).then(setMembers).catch(() => {})
@@ -250,24 +258,64 @@ function ChatWindow({
 		}
 	}, [conversation.id])
 
-	async function send(e: Event) {
-		e.preventDefault()
+	// Native Tauri file-drop gives real filesystem paths (HTML drop is intercepted).
+	useEffect(() => {
+		const un = getCurrentWebview().onDragDropEvent((event) => {
+			const p = event.payload
+			if (p.type === "drop") {
+				setStaged((prev) => [...prev, ...p.paths])
+			}
+		})
+		return () => {
+			un.then((fn) => fn())
+		}
+	}, [conversation.id])
+
+	async function pickFiles() {
+		const sel = await open({ multiple: true })
+		if (!sel) return
+		setStaged((prev) => [...prev, ...(Array.isArray(sel) ? sel : [sel])])
+	}
+
+	function unstage(path: string) {
+		setStaged((prev) => prev.filter((p) => p !== path))
+	}
+
+	async function send() {
 		const body = draft.trim()
-		if (!body) return
+		if (!body && staged.length === 0) return
 		setSending(true)
 		setError("")
 		try {
-			const msg =
-				conversation.kind === "group"
-					? await api.sendGroupMessage(conversation.id, body)
-					: await api.sendMessage(conversation.peer!, body)
-			setMessages((prev) => [...prev, msg])
+			// Attachments first, then the text line.
+			for (const path of staged) {
+				const msg = await api.sendAttachment(conversation.id, path)
+				setMessages((prev) => [...prev, msg])
+			}
+			if (body) {
+				const msg =
+					conversation.kind === "group"
+						? await api.sendGroupMessage(conversation.id, body)
+						: await api.sendMessage(conversation.peer!, body)
+				setMessages((prev) => [...prev, msg])
+			}
 			setDraft("")
+			setStaged([])
 			scrollToEnd()
 		} catch (err) {
 			setError(errMessage(err))
 		} finally {
 			setSending(false)
+		}
+	}
+
+	// Enter/Shift+Enter behavior per the user's setting.
+	function onKeyDown(e: KeyboardEvent) {
+		if (e.key !== "Enter") return
+		const sendCombo = enterSends ? !e.shiftKey : e.shiftKey
+		if (sendCombo) {
+			e.preventDefault()
+			send()
 		}
 	}
 
@@ -321,7 +369,8 @@ function ChatWindow({
 				{messages.map((m, i) => (
 					<div key={i} class={"bubble" + (m.outgoing ? " out" : " in")}>
 						{isGroup && !m.outgoing && <span class="bubble-sender">{nameOf(m.sender)}</span>}
-						<span class="bubble-body">{m.body}</span>
+						{m.attachment && <AttachmentView att={m.attachment} />}
+						{m.body && <span class="bubble-body">{m.body}</span>}
 						<span class="bubble-time">{formatTime(m.ts)}</span>
 					</div>
 				))}
@@ -329,16 +378,34 @@ function ChatWindow({
 
 			{error && <p class="error-text chat-error">{error}</p>}
 
-			<form class="composer" onSubmit={send}>
-				<input
-					placeholder={`Message ${conversation.title}…`}
+			{staged.length > 0 && (
+				<div class="staged">
+					{staged.map((p) => (
+						<span key={p} class="staged-chip" title={p}>
+							📎 {p.split(/[/\\]/).pop()}
+							<button class="staged-x" onClick={() => unstage(p)}>×</button>
+						</span>
+					))}
+				</div>
+			)}
+
+			<div class="composer">
+				<button class="icon-btn attach-btn" title="Attach files" onClick={pickFiles}>📎</button>
+				<textarea
+					rows={1}
+					placeholder={`Message ${conversation.title}…  (drag files here)`}
 					value={draft}
 					onInput={(e) => setDraft(e.currentTarget.value)}
+					onKeyDown={onKeyDown}
 				/>
-				<button class="primary" type="submit" disabled={sending || !draft.trim()}>
+				<button
+					class="primary"
+					onClick={send}
+					disabled={sending || (!draft.trim() && staged.length === 0)}
+				>
 					Send
 				</button>
-			</form>
+			</div>
 
 			{showMembers && (
 				<GroupMembersModal
@@ -358,4 +425,34 @@ function ChatWindow({
 function formatTime(ts: number): string {
 	const d = new Date(ts)
 	return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+}
+
+function formatSize(n: number): string {
+	if (n < 1024) return `${n} B`
+	if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+	if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+	return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+// Renders an attachment: an inline thumbnail for images, a clickable chip otherwise.
+function AttachmentView({ att }: { att: AttachmentInfo }) {
+	const [src, setSrc] = useState("")
+	const isImage = att.mime.startsWith("image/")
+	useEffect(() => {
+		if (isImage) api.readAttachment(att.id).then(setSrc).catch(() => {})
+	}, [att.id])
+
+	if (isImage) {
+		return src ? (
+			<img class="att-image" src={src} alt={att.filename} onClick={() => api.openAttachment(att.id)} />
+		) : (
+			<div class="att-loading muted">loading image…</div>
+		)
+	}
+	return (
+		<button class="att-file" title="Open" onClick={() => api.openAttachment(att.id)}>
+			📄 <span class="att-name">{att.filename}</span>
+			<span class="muted">({formatSize(att.size)})</span>
+		</button>
+	)
 }

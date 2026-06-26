@@ -45,20 +45,38 @@ export function SettingsModal({
 				<div class="modal-body">
 					<h3 class="settings-title">Settings</h3>
 					{settings ? (
-						<label class="setting-row">
-							<div>
-								<div class="setting-name">Desktop notifications</div>
-								<div class="setting-desc muted">Show a notification when a message arrives.</div>
-							</div>
-							<input
-								type="checkbox"
-								checked={settings.notifications_enabled}
-								disabled={saving}
-								onChange={(e) =>
-									update({ notifications_enabled: e.currentTarget.checked })
-								}
-							/>
-						</label>
+						<>
+							<label class="setting-row">
+								<div>
+									<div class="setting-name">Desktop notifications</div>
+									<div class="setting-desc muted">Show a notification when a message arrives.</div>
+								</div>
+								<input
+									type="checkbox"
+									checked={settings.notifications_enabled}
+									disabled={saving}
+									onChange={(e) =>
+										update({ notifications_enabled: e.currentTarget.checked })
+									}
+								/>
+							</label>
+							<label class="setting-row">
+								<div>
+									<div class="setting-name">Shift+Enter inserts a new line</div>
+									<div class="setting-desc muted">
+										{settings.enter_sends
+											? "Enter sends; Shift+Enter = new line."
+											: "Enter = new line; Shift+Enter sends."}
+									</div>
+								</div>
+								<input
+									type="checkbox"
+									checked={settings.enter_sends}
+									disabled={saving}
+									onChange={(e) => update({ enter_sends: e.currentTarget.checked })}
+								/>
+							</label>
+						</>
 					) : (
 						<p class="muted">Loading…</p>
 					)}

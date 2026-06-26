@@ -11,12 +11,14 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 
 use seqr_crypto::keys::Identity;
+use seqr_crypto::SymmetricKey;
 
+use crate::core::attachment::{self, Reassembler};
 use crate::core::mailbox::MailboxClient;
-use crate::core::packet::{GroupInvite, Packet};
+use crate::core::packet::{AttachmentChunk, AttachmentMeta, GroupInvite, Packet};
 use crate::core::session::SessionState;
 use crate::core::transport::{recv_frame, Transport};
-use crate::core::vault::{Friend, Group, StoredMessage};
+use crate::core::vault::{Friend, Group, StoredMessage, VaultData};
 use crate::core::{conversation, group, message, now_millis, vault, CoreError};
 
 pub const MESSAGE_EVENT: &str = "seqr://message";
@@ -189,24 +191,7 @@ fn process_incoming(state: &Arc<SessionState>, bytes: &[u8]) -> Result<Inbound, 
             if u.data.has_incoming(&frame.conversation_id, &frame.sender, frame.seq) {
                 return Ok(Inbound::Nothing);
             }
-            let me = u.data.identity()?;
-
-            // Group message if we know the group; otherwise a 1:1.
-            let key = if let Some(g) = u.data.group_by_id(&frame.conversation_id) {
-                if !g.members.iter().any(|m| m.signing_public == frame.sender) {
-                    return Err(CoreError::UnknownSender);
-                }
-                u.data.group_key(&frame.conversation_id)
-                    .ok_or(CoreError::Crypto("no group key".into()))?
-            } else {
-                let friend = u
-                    .data
-                    .friend_by_signing(&frame.sender)
-                    .ok_or(CoreError::UnknownSender)?
-                    .clone();
-                conversation::direct_key_for_epoch(&u.data, &me, &friend, frame.epoch)?
-            };
-
+            let key = conv_key_for(&u.data, &frame.conversation_id, &frame.sender, frame.epoch)?;
             let body = message::open_frame(&key, &frame)?;
             let msg = StoredMessage {
                 conversation_id: frame.conversation_id.clone(),
@@ -215,11 +200,14 @@ fn process_incoming(state: &Arc<SessionState>, bytes: &[u8]) -> Result<Inbound, 
                 ts: now_millis(),
                 outgoing: false,
                 seq: frame.seq,
+                attachment: None,
             };
             u.data.add_message(msg.clone());
             vault::save(&state.data_dir, &u.vault_key, &u.data)?;
             Ok(Inbound::Message(msg))
         }),
+        Packet::AttachmentMeta(meta) => handle_attachment_meta(state, meta),
+        Packet::AttachmentChunk(chunk) => handle_attachment_chunk(state, chunk),
         Packet::GroupInvite(invite) => handle_invite(state, invite),
         Packet::FriendRequest(req) => state.with_unlocked(|u| {
             // Verify the profile signature (binds agreement key to the signing key).
@@ -263,6 +251,119 @@ fn process_incoming(state: &Arc<SessionState>, bytes: &[u8]) -> Result<Inbound, 
             Ok(Inbound::Nothing)
         }),
     }
+}
+
+/// Resolve the symmetric key to open a message/attachment in a conversation: the group
+/// key for a known group (sender must be a member), else the 1:1 key for the epoch
+/// (sender must be a friend).
+fn conv_key_for(
+    data: &VaultData,
+    conversation_id: &str,
+    sender: &str,
+    epoch: u64,
+) -> Result<SymmetricKey, CoreError> {
+    let me = data.identity()?;
+    if let Some(g) = data.group_by_id(conversation_id) {
+        if !g.members.iter().any(|m| m.signing_public == sender) {
+            return Err(CoreError::UnknownSender);
+        }
+        data.group_key(conversation_id).ok_or(CoreError::Crypto("no group key".into()))
+    } else {
+        let friend = data.friend_by_signing(sender).ok_or(CoreError::UnknownSender)?.clone();
+        conversation::direct_key_for_epoch(data, &me, &friend, epoch)
+    }
+}
+
+fn handle_attachment_meta(
+    state: &Arc<SessionState>,
+    meta: AttachmentMeta,
+) -> Result<Inbound, CoreError> {
+    if meta.size > attachment::MAX_ATTACHMENT {
+        return Err(CoreError::Storage("attachment exceeds size cap".into()));
+    }
+    // Already reassembling this one? Ignore the duplicate header.
+    if state.reassembly.lock().expect("reassembly mutex").contains_key(&meta.att_id) {
+        return Ok(Inbound::Nothing);
+    }
+    // Verify the signature and resolve the conversation key.
+    let key = state.with_unlocked(|u| {
+        let signer: [u8; 32] = hex::decode(&meta.sender)
+            .ok()
+            .and_then(|v| v.try_into().ok())
+            .ok_or(CoreError::BadProfile("bad sender".into()))?;
+        let sig: [u8; 64] = hex::decode(&meta.signature)
+            .ok()
+            .and_then(|v| v.try_into().ok())
+            .ok_or(CoreError::BadProfile("bad signature".into()))?;
+        seqr_crypto::sign::verify_raw(&signer, &meta.signing_bytes(), &sig)?;
+        conv_key_for(&u.data, &meta.conversation_id, &meta.sender, meta.epoch)
+    })?;
+
+    let info = crate::core::vault::AttachmentInfo {
+        id: meta.att_id.clone(),
+        filename: meta.filename.clone(),
+        mime: meta.mime.clone(),
+        size: meta.size,
+    };
+    let reassembler = Reassembler::new(
+        &state.data_dir,
+        info,
+        meta.conversation_id.clone(),
+        meta.sender.clone(),
+        meta.seq,
+        key,
+        meta.chunks,
+    )?;
+    state.reassembly.lock().expect("reassembly mutex").insert(meta.att_id, reassembler);
+    Ok(Inbound::Nothing)
+}
+
+fn handle_attachment_chunk(
+    state: &Arc<SessionState>,
+    chunk: AttachmentChunk,
+) -> Result<Inbound, CoreError> {
+    let bytes = hex::decode(&chunk.data).map_err(|_| CoreError::Crypto("bad chunk hex".into()))?;
+
+    // Add the chunk; if it completes the attachment, take the reassembler out.
+    let completed = {
+        let mut map = state.reassembly.lock().expect("reassembly mutex");
+        match map.get_mut(&chunk.att_id) {
+            Some(r) => {
+                if r.add_chunk(chunk.index, &bytes)? {
+                    map.remove(&chunk.att_id)
+                } else {
+                    None
+                }
+            }
+            None => return Ok(Inbound::Nothing), // no header yet, or already finished
+        }
+    };
+
+    let Some(reassembler) = completed else {
+        return Ok(Inbound::Nothing);
+    };
+
+    // Finalize to disk and record the message.
+    let conversation_id = reassembler.conversation_id.clone();
+    let sender = reassembler.sender.clone();
+    let seq = reassembler.seq;
+    let info = reassembler.finalize()?;
+
+    let msg = state.with_unlocked(|u| {
+        let msg = StoredMessage {
+            conversation_id,
+            sender,
+            body: String::new(),
+            ts: now_millis(),
+            outgoing: false,
+            seq,
+            attachment: Some(info),
+        };
+        u.data.add_message(msg.clone());
+        vault::save(&state.data_dir, &u.vault_key, &u.data)?;
+        Ok(msg)
+    })?;
+    Ok(Inbound::Message(msg))
 }
 
 fn handle_invite(state: &Arc<SessionState>, invite: GroupInvite) -> Result<Inbound, CoreError> {

@@ -56,6 +56,10 @@ pub struct Settings {
     /// Show a desktop notification on an incoming message.
     #[serde(default = "default_true")]
     pub notifications_enabled: bool,
+    /// When true, Enter sends and Shift+Enter inserts a newline; when false, the
+    /// reverse (Enter = newline, Shift+Enter = send).
+    #[serde(default = "default_true")]
+    pub enter_sends: bool,
 }
 
 fn default_true() -> bool {
@@ -64,8 +68,18 @@ fn default_true() -> bool {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { notifications_enabled: true }
+        Self { notifications_enabled: true, enter_sends: true }
     }
+}
+
+/// Metadata for an attachment carried by a message (the bytes live on disk, not here).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AttachmentInfo {
+    /// Random attachment id; also the on-disk directory name.
+    pub id: String,
+    pub filename: String,
+    pub mime: String,
+    pub size: u64,
 }
 
 /// The current rotated key for a 1:1 conversation (latest epoch only).
@@ -104,6 +118,9 @@ pub struct StoredMessage {
     /// directly and via the mailbox).
     #[serde(default)]
     pub seq: u64,
+    /// Optional file attachment (bytes stored on disk under `attachments/<id>`).
+    #[serde(default)]
+    pub attachment: Option<AttachmentInfo>,
 }
 
 impl VaultData {

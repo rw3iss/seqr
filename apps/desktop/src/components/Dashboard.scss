@@ -210,9 +210,80 @@
 
 .composer {
 	display: flex;
+	align-items: flex-end;
 	gap: $space-2;
 	padding: $space-3 $space-4;
 	border-top: 1px solid $border;
 
-	input { flex: 1; }
+	textarea {
+		flex: 1;
+		resize: none;
+		max-height: 160px;
+		min-height: 38px;
+		line-height: 1.4;
+		font-family: inherit;
+	}
+}
+
+.attach-btn {
+	font-size: 18px;
+	border: 1px solid $border;
+	border-radius: $radius-sm;
+	align-self: flex-end;
+}
+
+.staged {
+	display: flex;
+	flex-wrap: wrap;
+	gap: $space-2;
+	padding: $space-2 $space-4 0;
+}
+
+.staged-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: $space-1;
+	font-size: 12px;
+	background: $bg-elevated;
+	border: 1px solid $border;
+	border-radius: $radius-sm;
+	padding: $space-1 $space-2;
+	max-width: 220px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.staged-x {
+	border: none;
+	background: transparent;
+	color: $text-muted;
+	padding: 0 2px;
+	font-size: 14px;
+}
+
+.att-image {
+	max-width: 240px;
+	max-height: 240px;
+	border-radius: $radius-sm;
+	cursor: pointer;
+	display: block;
+}
+
+.att-loading {
+	font-size: 12px;
+	padding: $space-2;
+}
+
+.att-file {
+	display: inline-flex;
+	align-items: center;
+	gap: $space-1;
+	background: $bg;
+	border: 1px solid $border;
+	border-radius: $radius-sm;
+	padding: $space-2 $space-3;
+	max-width: 260px;
+
+	.att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }

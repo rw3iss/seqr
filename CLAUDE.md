@@ -155,6 +155,22 @@ A local `seqr.toml` is already written at `~/.config/com.seqr.app/seqr.toml`.
   (`group_members` command) for viewing/removing group members; group bubbles show
   sender display names from the roster.
 
+## Attachments (`core/attachment.rs`)
+
+Any file up to **1 GB**. Encrypted **per chunk** with the conversation key (AAD binds
+chunk to attachment id + index), sent as `Packet::AttachmentMeta` + `AttachmentChunk`
+through the normal deliver path (direct or mailbox). Receiver reassembles
+**streaming-to-disk** (never in memory) via `Reassembler`, keyed in
+`SessionState.reassembly`. Commands: `send_attachment`, `read_attachment` (data URL for
+images, ≤16MB), `open_attachment` (opener plugin). UI: 📎 picker (dialog plugin), native
+file drag-drop (`onDragDropEvent` → real paths), staged chips, image thumbnails / file
+chips, multi-line textarea with the Enter/Shift+Enter setting (`settings.enter_sends`).
+
+Caveats: very large files over the per-message-connect path are slow, and parking huge
+files on the mailbox is impractical — large files realistically need both peers online.
+Attachments are stored **decrypted at rest** under `<data_dir>/attachments/` (transit is
+fully E2E); encrypting them at rest with the vault key is a planned follow-up.
+
 ## Verification (safety numbers)
 
 `seqr_crypto::fingerprint::safety_number(a, b)` derives an order-independent,
