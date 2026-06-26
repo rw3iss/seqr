@@ -45,6 +45,27 @@ pub struct VaultData {
     /// Incoming friend requests awaiting accept/decline.
     #[serde(default)]
     pub pending_requests: Vec<Friend>,
+    /// User preferences.
+    #[serde(default)]
+    pub settings: Settings,
+}
+
+/// App preferences (per account).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Settings {
+    /// Show a desktop notification on an incoming message.
+    #[serde(default = "default_true")]
+    pub notifications_enabled: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self { notifications_enabled: true }
+    }
 }
 
 /// The current rotated key for a 1:1 conversation (latest epoch only).
@@ -253,6 +274,7 @@ pub fn create(data_dir: &Path, display_name: &str, password: &str) -> Result<(Sy
         groups: Vec::new(),
         direct_keys: Vec::new(),
         pending_requests: Vec::new(),
+        settings: Settings::default(),
     };
 
     let salt = kdf::generate_salt();

@@ -49,6 +49,10 @@ export interface Conversation {
 	members: number
 }
 
+export interface Settings {
+	notifications_enabled: boolean
+}
+
 export const api = {
 	appStatus: (): Promise<AppStatus> => invoke("app_status"),
 	appConfig: (): Promise<AppConfig> => invoke("app_config"),
@@ -60,6 +64,8 @@ export const api = {
 	exportProfile: (): Promise<string> => invoke("export_profile"),
 	importFriend: (token: string): Promise<Friend> => invoke("import_friend", { token }),
 	listFriends: (): Promise<Friend[]> => invoke("list_friends"),
+	getSettings: (): Promise<Settings> => invoke("get_settings"),
+	setSettings: (settings: Settings): Promise<void> => invoke("set_settings", { settings }),
 	listRequests: (): Promise<Friend[]> => invoke("list_requests"),
 	acceptRequest: (signing: string): Promise<void> => invoke("accept_request", { signing }),
 	declineRequest: (signing: string): Promise<void> => invoke("decline_request", { signing }),

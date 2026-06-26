@@ -29,6 +29,11 @@
 	.me-status { font-size: 11px; color: $success; }
 }
 
+.head-buttons {
+	display: flex;
+	gap: $space-1;
+}
+
 .icon-btn {
 	border: none;
 	background: transparent;

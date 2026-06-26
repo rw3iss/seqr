@@ -14,7 +14,7 @@ use seqr_protocol::ProfileBlob;
 use crate::core::config::AppConfig;
 use crate::core::packet::{GroupInvite, Packet};
 use crate::core::session::SessionState;
-use crate::core::vault::{Friend, Group, StoredMessage};
+use crate::core::vault::{Friend, Group, Settings, StoredMessage};
 use crate::core::{conversation, group, identity, message, now_millis, vault, CoreError, CoreResult};
 use crate::net;
 
@@ -156,6 +156,22 @@ pub fn decline_request(signing: String, state: Session) -> CoreResult<()> {
 #[tauri::command]
 pub fn list_friends(state: Session) -> CoreResult<Vec<Friend>> {
     state.with_unlocked(|u| Ok(u.data.friends.clone()))
+}
+
+/// Read the account's settings.
+#[tauri::command]
+pub fn get_settings(state: Session) -> CoreResult<Settings> {
+    state.with_unlocked(|u| Ok(u.data.settings.clone()))
+}
+
+/// Update the account's settings.
+#[tauri::command]
+pub fn set_settings(settings: Settings, state: Session) -> CoreResult<()> {
+    let data_dir = state.data_dir.clone();
+    state.with_unlocked(|u| {
+        u.data.settings = settings;
+        vault::save(&data_dir, &u.vault_key, &u.data)
+    })
 }
 
 /// All conversations (1:1 and group) for the conversations list.

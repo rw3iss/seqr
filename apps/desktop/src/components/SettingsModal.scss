@@ -1,0 +1,24 @@
+@use "../styles/tokens" as *;
+
+.settings-title {
+	margin: 0 0 $space-2;
+}
+
+.setting-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: $space-4;
+	padding: $space-2 0;
+
+	input { width: auto; }
+}
+
+.setting-name {
+	font-weight: 600;
+}
+
+.setting-desc {
+	font-size: 12px;
+	margin-top: 2px;
+}

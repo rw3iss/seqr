@@ -9,12 +9,15 @@ import {
 	type AppConfig,
 	type Conversation,
 	type ProfileBlob,
+	type Settings,
 	type StoredMessage,
 } from "../lib/api"
 import { AddFriendModal } from "./AddFriendModal"
 import { CreateGroupModal } from "./CreateGroupModal"
 import { GroupMembersModal } from "./GroupMembersModal"
 import { FriendRequests } from "./FriendRequests"
+import { SettingsModal } from "./SettingsModal"
+import { ensureNotificationPermission, notify } from "../lib/notify"
 import type { Friend } from "../lib/api"
 import "./Dashboard.scss"
 
@@ -28,7 +31,9 @@ export function Dashboard({ profile, onLocked }: Props) {
 	const [selected, setSelected] = useState<Conversation | null>(null)
 	const [showAdd, setShowAdd] = useState(false)
 	const [showGroup, setShowGroup] = useState(false)
+	const [showSettings, setShowSettings] = useState(false)
 	const [config, setConfig] = useState<AppConfig | null>(null)
+	const [settings, setSettings] = useState<Settings | null>(null)
 	const [error, setError] = useState("")
 
 	async function refresh() {
@@ -42,12 +47,30 @@ export function Dashboard({ profile, onLocked }: Props) {
 	useEffect(() => {
 		refresh()
 		api.appConfig().then(setConfig).catch(() => {})
+		api.getSettings().then((s) => {
+			setSettings(s)
+			if (s.notifications_enabled) ensureNotificationPermission()
+		}).catch(() => {})
 		// A new group invite (or membership change) should surface in the list.
 		const unlisten = api.onGroupUpdate(() => refresh())
 		return () => {
 			unlisten.then((fn) => fn())
 		}
 	}, [])
+
+	// Global notification listener: notify on inbound messages unless they belong to
+	// the conversation the user is currently viewing.
+	useEffect(() => {
+		const unlisten = api.onMessage((m) => {
+			if (!settings?.notifications_enabled) return
+			if (selected?.id === m.conversation_id) return
+			const conv = conversations.find((c) => c.id === m.conversation_id)
+			notify(conv?.title ?? "New message", m.body)
+		})
+		return () => {
+			unlisten.then((fn) => fn())
+		}
+	}, [settings, selected, conversations])
 
 	async function lock() {
 		await api.lock()
@@ -62,7 +85,10 @@ export function Dashboard({ profile, onLocked }: Props) {
 						<span class="me-name">{profile.display_name}</span>
 						<span class="me-status muted">● connected</span>
 					</div>
-					<button class="icon-btn" title="Lock" onClick={lock}>⏻</button>
+					<div class="head-buttons">
+						<button class="icon-btn" title="Settings" onClick={() => setShowSettings(true)}>⚙</button>
+						<button class="icon-btn" title="Lock" onClick={lock}>⏻</button>
+					</div>
 				</header>
 
 				<div class="sidebar-actions">
@@ -114,6 +140,9 @@ export function Dashboard({ profile, onLocked }: Props) {
 
 			{showAdd && <AddFriendModal onClose={() => setShowAdd(false)} onFriendAdded={refresh} />}
 			{showGroup && <CreateGroupModal onClose={() => setShowGroup(false)} onCreated={refresh} />}
+			{showSettings && (
+				<SettingsModal onClose={() => setShowSettings(false)} onSaved={setSettings} />
+			)}
 		</div>
 	)
 }
