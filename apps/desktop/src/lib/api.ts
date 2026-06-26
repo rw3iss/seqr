@@ -79,6 +79,7 @@ export const api = {
 	acceptRequest: (signing: string): Promise<void> => invoke("accept_request", { signing }),
 	declineRequest: (signing: string): Promise<void> => invoke("decline_request", { signing }),
 	listConversations: (): Promise<Conversation[]> => invoke("list_conversations"),
+	presence: (ids: string[]): Promise<string[]> => invoke("presence", { ids }),
 	getHistory: (conversationId: string): Promise<StoredMessage[]> =>
 		invoke("get_history", { conversationId }),
 	groupMembers: (groupId: string): Promise<Friend[]> => invoke("group_members", { groupId }),

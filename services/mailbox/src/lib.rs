@@ -6,8 +6,9 @@
 pub mod config;
 pub mod store;
 
+use std::collections::HashMap;
 use std::io::Write;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::extract::State;
@@ -16,15 +17,21 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 
 use seqr_protocol::mailbox::{
-    AckRequest, LogRequest, PullRequest, PullResponse, PushRequest, PushResponse,
+    AckRequest, LogRequest, PresenceRequest, PresenceResponse, PullRequest, PullResponse,
+    PushRequest, PushResponse,
 };
 
 use config::Config;
 use store::{is_hex, Store};
 
+/// Consider an identity "online" if it polled within this many seconds.
+const PRESENCE_WINDOW_SECS: u64 = 15;
+
 pub struct AppState {
     pub store: Store,
     pub config: Config,
+    /// Last poll time (unix secs) per identity — used to infer presence.
+    pub seen: Mutex<HashMap<String, u64>>,
 }
 
 pub type Shared = Arc<AppState>;
@@ -37,6 +44,7 @@ pub fn build_router(state: Shared) -> Router {
         .route("/v1/pull", post(pull))
         .route("/v1/ack", post(ack))
         .route("/v1/log", post(client_log).get(read_log))
+        .route("/v1/presence", post(presence))
         .with_state(state)
 }
 
@@ -109,6 +117,8 @@ async fn pull(
     if !verify_identity(&req.identity, &msg, &req.signature) {
         return Err(StatusCode::UNAUTHORIZED);
     }
+    // Record activity for presence (authenticated above).
+    st.seen.lock().expect("seen mutex").insert(req.identity.clone(), now_secs());
     let messages = st
         .store
         .pull(&req.identity, st.config.pull_limit)
@@ -147,4 +157,19 @@ async fn client_log(State(st): State<Shared>, Json(req): Json<LogRequest>) -> St
 /// `GET /v1/log` — return the debug log as plain text (debugging only).
 async fn read_log(State(st): State<Shared>) -> String {
     std::fs::read_to_string(st.config.data_dir.join("debug.log")).unwrap_or_default()
+}
+
+/// `POST /v1/presence` — which of the given identities polled within the window.
+async fn presence(
+    State(st): State<Shared>,
+    Json(req): Json<PresenceRequest>,
+) -> Json<PresenceResponse> {
+    let now = now_secs();
+    let seen = st.seen.lock().expect("seen mutex");
+    let online = req
+        .ids
+        .into_iter()
+        .filter(|id| seen.get(id).is_some_and(|t| now.saturating_sub(*t) <= PRESENCE_WINDOW_SECS))
+        .collect();
+    Json(PresenceResponse { online })
 }

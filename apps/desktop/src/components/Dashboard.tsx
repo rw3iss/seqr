@@ -39,6 +39,7 @@ export function Dashboard({ profile, onLocked }: Props) {
 	const [config, setConfig] = useState<AppConfig | null>(null)
 	const [settings, setSettings] = useState<Settings | null>(null)
 	const [focused, setFocused] = useState(true)
+	const [online, setOnline] = useState<Set<string>>(new Set())
 	const [error, setError] = useState("")
 
 	async function refresh() {
@@ -62,6 +63,29 @@ export function Dashboard({ profile, onLocked }: Props) {
 			unlisten.then((fn) => fn())
 		}
 	}, [])
+
+	// Poll the mailbox for which friends are online (recently active).
+	useEffect(() => {
+		let stop = false
+		async function poll() {
+			const peers = conversations
+				.filter((c) => c.kind === "direct" && c.peer)
+				.map((c) => c.peer as string)
+			if (peers.length === 0) return
+			try {
+				const onlineIds = await api.presence(peers)
+				if (!stop) setOnline(new Set(onlineIds))
+			} catch {
+				/* ignore transient errors */
+			}
+		}
+		poll()
+		const t = setInterval(poll, 8000)
+		return () => {
+			stop = true
+			clearInterval(t)
+		}
+	}, [conversations])
 
 	// Track window focus so we only notify when Seqr is in the background/minimized.
 	useEffect(() => {
@@ -128,6 +152,12 @@ export function Dashboard({ profile, onLocked }: Props) {
 								{c.kind === "group" ? "#" : c.title.charAt(0).toUpperCase()}
 							</span>
 							<span class="friend-name">{c.title}</span>
+							{c.kind === "direct" && (
+								<span
+									class={"presence" + (c.peer && online.has(c.peer) ? " online" : "")}
+									title={c.peer && online.has(c.peer) ? "Online" : "Offline"}
+								/>
+							)}
 						</button>
 					))}
 				</nav>

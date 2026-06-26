@@ -61,6 +61,7 @@ pub fn run() {
             commands::set_settings,
             commands::list_conversations,
             commands::get_history,
+            commands::presence,
             commands::group_members,
             commands::safety_number,
             commands::send_message,

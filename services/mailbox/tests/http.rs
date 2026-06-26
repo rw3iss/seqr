@@ -33,7 +33,7 @@ fn test_state() -> Arc<AppState> {
         pull_limit: 256,
     };
     let store = Store::new(&config.data_dir).unwrap();
-    Arc::new(AppState { store, config })
+    Arc::new(AppState { store, config, seen: std::sync::Mutex::new(std::collections::HashMap::new()) })
 }
 
 async fn post_json(state: Arc<AppState>, path: &str, body: &impl serde::Serialize) -> (StatusCode, Vec<u8>) {

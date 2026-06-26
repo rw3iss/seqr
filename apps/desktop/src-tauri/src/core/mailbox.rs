@@ -11,7 +11,8 @@ use reqwest::{Certificate, Client};
 use seqr_crypto::keys::Identity;
 use seqr_crypto::sign::sign;
 use seqr_protocol::mailbox::{
-    AckRequest, LogRequest, PullRequest, PullResponse, PulledMessage, PushRequest, PushResponse,
+    AckRequest, LogRequest, PresenceRequest, PresenceResponse, PullRequest, PullResponse,
+    PulledMessage, PushRequest, PushResponse,
 };
 
 use super::{now_millis, CoreError};
@@ -77,6 +78,21 @@ impl MailboxClient {
             return Err(merr(format!("pull status {}", resp.status())));
         }
         Ok(resp.json::<PullResponse>().await.map_err(merr)?.messages)
+    }
+
+    /// Ask which of `ids` are currently online (have polled recently).
+    pub async fn presence(&self, ids: Vec<String>) -> Result<Vec<String>, CoreError> {
+        let resp = self
+            .http
+            .post(format!("{}/v1/presence", self.base))
+            .json(&PresenceRequest { ids })
+            .send()
+            .await
+            .map_err(merr)?;
+        if !resp.status().is_success() {
+            return Err(merr(format!("presence status {}", resp.status())));
+        }
+        Ok(resp.json::<PresenceResponse>().await.map_err(merr)?.online)
     }
 
     /// Post a diagnostic line to the server's debug log (best-effort, unauthenticated).

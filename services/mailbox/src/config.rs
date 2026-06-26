@@ -21,9 +21,11 @@ impl Config {
         Self {
             bind: get("SEQR_MAILBOX_BIND", "0.0.0.0:8787"),
             data_dir: PathBuf::from(get("SEQR_MAILBOX_DATA", "./data")),
-            max_payload: get("SEQR_MAILBOX_MAX_PAYLOAD", "131072").parse().unwrap_or(131072),
+            // 2 MiB: fits one hex-encoded attachment chunk (~512 KiB plaintext) plus overhead.
+            max_payload: get("SEQR_MAILBOX_MAX_PAYLOAD", "2097152").parse().unwrap_or(2097152),
             clock_skew_secs: get("SEQR_MAILBOX_SKEW_SECS", "120").parse().unwrap_or(120),
-            pull_limit: get("SEQR_MAILBOX_PULL_LIMIT", "256").parse().unwrap_or(256),
+            // Bounded so a single pull response stays modest even with large items.
+            pull_limit: get("SEQR_MAILBOX_PULL_LIMIT", "16").parse().unwrap_or(16),
         }
     }
 }

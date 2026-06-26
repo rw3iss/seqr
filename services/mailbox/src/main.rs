@@ -20,7 +20,7 @@ async fn main() {
     let config = Config::from_env();
     let store = Store::new(&config.data_dir).expect("create data dir");
     let bind = config.bind.clone();
-    let state = Arc::new(AppState { store, config });
+    let state = Arc::new(AppState { store, config, seen: std::sync::Mutex::new(std::collections::HashMap::new()) });
 
     let app = build_router(state);
     let listener = tokio::net::TcpListener::bind(&bind).await.expect("bind");

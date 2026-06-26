@@ -14,6 +14,7 @@ use tauri::{AppHandle, State};
 use seqr_protocol::ProfileBlob;
 
 use crate::core::config::AppConfig;
+use crate::core::mailbox::MailboxClient;
 use crate::core::packet::{AttachmentChunk, AttachmentMeta, GroupInvite, Packet};
 use crate::core::session::SessionState;
 use crate::core::vault::{AttachmentInfo, Friend, Group, Settings, StoredMessage};
@@ -210,6 +211,13 @@ pub fn list_conversations(state: Session) -> CoreResult<Vec<ConversationDto>> {
 #[tauri::command]
 pub fn get_history(conversation_id: String, state: Session) -> CoreResult<Vec<StoredMessage>> {
     state.with_unlocked(|u| Ok(u.data.history(&conversation_id)))
+}
+
+/// Which of the given identities are currently online (polling the mailbox).
+#[tauri::command]
+pub async fn presence(ids: Vec<String>, state: Session<'_>) -> CoreResult<Vec<String>> {
+    let client = MailboxClient::new(&state.mailbox_url, state.mailbox_cert.as_deref());
+    client.presence(ids).await
 }
 
 /// The other members of a group (everyone but this account).
@@ -564,32 +572,47 @@ pub async fn send_attachment(
         })?
     };
 
-    // Keep our own copy so the sender's UI can display it.
+    // Keep our own copy so the sender's UI can display it immediately (done before we
+    // return, so read_attachment succeeds right away).
     std::fs::create_dir_all(attachment::attachments_dir(&state.data_dir)).ok();
-    let _ = std::fs::copy(&src, attachment::attachment_path(&state.data_dir, &att_id));
+    std::fs::copy(&src, attachment::attachment_path(&state.data_dir, &att_id))
+        .map_err(|e| CoreError::Storage(e.to_string()))?;
 
-    // Phase 2: announce, then stream encrypted chunks.
-    for r in &recipients {
-        net::deliver(state.inner(), r, &meta_json).await;
-    }
-    let mut file = std::fs::File::open(&src).map_err(|e| CoreError::Storage(e.to_string()))?;
-    let mut buf = vec![0u8; attachment::CHUNK_SIZE];
-    for index in 0..chunks {
-        let mut filled = 0usize;
-        while filled < buf.len() {
-            let n = file.read(&mut buf[filled..]).map_err(|e| CoreError::Storage(e.to_string()))?;
-            if n == 0 {
-                break;
-            }
-            filled += n;
-        }
-        let ct = attachment::seal_chunk(&key, &att_id, index, &buf[..filled]);
-        let chunk = AttachmentChunk { att_id: att_id.clone(), index, data: hex::encode(ct) };
-        let cj = Packet::AttachmentChunk(chunk).to_json();
+    // Deliver in the background so the UI shows the message at once (and a slow or
+    // offline transfer never blocks the composer).
+    let st = Arc::clone(state.inner());
+    tauri::async_runtime::spawn(async move {
         for r in &recipients {
-            net::deliver(state.inner(), r, &cj).await;
+            net::deliver(&st, r, &meta_json).await;
         }
-    }
+        let mut file = match std::fs::File::open(&src) {
+            Ok(f) => f,
+            Err(e) => {
+                eprintln!("seqr: attachment read failed: {e}");
+                return;
+            }
+        };
+        let mut buf = vec![0u8; attachment::CHUNK_SIZE];
+        for index in 0..chunks {
+            let mut filled = 0usize;
+            while filled < buf.len() {
+                match file.read(&mut buf[filled..]) {
+                    Ok(0) => break,
+                    Ok(n) => filled += n,
+                    Err(e) => {
+                        eprintln!("seqr: attachment read error: {e}");
+                        return;
+                    }
+                }
+            }
+            let ct = attachment::seal_chunk(&key, &att_id, index, &buf[..filled]);
+            let chunk = AttachmentChunk { att_id: att_id.clone(), index, data: hex::encode(ct) };
+            let cj = Packet::AttachmentChunk(chunk).to_json();
+            for r in &recipients {
+                net::deliver(&st, r, &cj).await;
+            }
+        }
+    });
     Ok(stored)
 }
 

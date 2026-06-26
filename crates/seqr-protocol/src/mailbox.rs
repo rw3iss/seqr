@@ -80,3 +80,15 @@ pub struct LogRequest {
     pub tag: String,
     pub msg: String,
 }
+
+/// `POST /v1/presence` — which of these identities have polled recently (are "online").
+/// Presence is inferred from poll activity; no extra signalling needed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresenceRequest {
+    pub ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresenceResponse {
+    pub online: Vec<String>,
+}

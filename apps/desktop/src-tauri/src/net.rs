@@ -26,6 +26,9 @@ pub const GROUP_EVENT: &str = "seqr://group";
 pub const REQUEST_EVENT: &str = "seqr://request";
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
+/// Cap a direct-delivery attempt; beyond this we assume the peer is unreachable and use
+/// the mailbox. Short enough to feel responsive, long enough for a real hole-punch.
+const DIRECT_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// First 8 hex chars, for compact logging.
 fn short(hex: &str) -> String {
@@ -74,17 +77,25 @@ pub async fn deliver(state: &Arc<SessionState>, recipient_hex: &str, payload: &[
         debug_log(state, format!("deliver ABORT: bad recipient {}", short(recipient_hex)));
         return;
     };
+    // Try direct, but cap the attempt so an offline peer doesn't stall the send for
+    // the full QUIC/discovery timeout — fall back to the mailbox quickly.
     let direct = match state.transport() {
-        Some(t) => match t.send_to_id(&signing, payload).await {
-            Ok(()) => {
-                debug_log(state, format!("deliver: DIRECT ok -> {}", short(recipient_hex)));
-                true
+        Some(t) => {
+            match tokio::time::timeout(DIRECT_TIMEOUT, t.send_to_id(&signing, payload)).await {
+                Ok(Ok(())) => {
+                    debug_log(state, format!("deliver: DIRECT ok -> {}", short(recipient_hex)));
+                    true
+                }
+                Ok(Err(e)) => {
+                    debug_log(state, format!("deliver: direct failed -> {} ({e})", short(recipient_hex)));
+                    false
+                }
+                Err(_) => {
+                    debug_log(state, format!("deliver: direct timeout -> {} (offline?)", short(recipient_hex)));
+                    false
+                }
             }
-            Err(e) => {
-                debug_log(state, format!("deliver: direct failed -> {} ({e})", short(recipient_hex)));
-                false
-            }
-        },
+        }
         None => false,
     };
     if !direct {
