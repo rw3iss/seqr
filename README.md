@@ -7,9 +7,10 @@ on your own device; they travel directly between friends over an encrypted conne
 and no server can ever read them. Supports both 1:1 and group conversations, with keys
 you can rotate or revoke at any time.
 
-> **Status:** early development. The local account/vault, friends, UI, and the
-> self-hosted mailbox helper are working. Live messaging (transport + offline delivery)
-> and groups are the next milestones — see `CLAUDE.md` for the roadmap.
+> **Status:** MVP feature-complete. Working: local account/vault, friends, 1:1 and
+> group end-to-end chat over iroh QUIC, offline delivery via the self-hosted mailbox,
+> and key rotation/revocation. Run two instances on separate machines to chat live.
+> See `CLAUDE.md` for architecture and notes.
 
 ---
 
