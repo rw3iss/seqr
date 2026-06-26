@@ -81,6 +81,10 @@ curl --cacert ~/.config/com.seqr.app/mailbox_cert.pem https://37.27.248.79:8443/
 - **CI:** `.github/workflows/release.yml` (tauri-action) builds macOS `.dmg` (universal),
   Windows `.msi`, Linux `.AppImage`/`.deb` on a `v*` tag and drafts a GitHub Release.
 - **Local macOS build:** `./scripts/setup-macos.sh` → `apps/desktop/src-tauri/target/release/bundle/`.
+- **Local Linux build:** `pnpm build:linux` (from `apps/desktop`) → `.deb` + `.rpm`. Use
+  this rather than `pnpm tauri build`: the AppImage step (`linuxdeploy`) is flaky when
+  run after deb/rpm in the same invocation, so it's excluded from local Linux builds.
+  AppImage still builds in CI on Ubuntu (`--bundles appimage`) for other distros.
 - Builds are **unsigned** (no Apple Developer cert); macOS users right-click → Open once.
 - macOS bundles **must be built on macOS/CI** — they can't be cross-built from Linux.
 

@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri"
+    "tauri": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 APPIMAGE_EXTRACT_AND_RUN=1 tauri",
+    "build:linux": "cross-env WEBKIT_DISABLE_DMABUF_RENDERER=1 tauri build --bundles deb rpm"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
