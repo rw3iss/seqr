@@ -25,7 +25,7 @@ pub const MESSAGE_EVENT: &str = "seqr://message";
 pub const GROUP_EVENT: &str = "seqr://group";
 pub const REQUEST_EVENT: &str = "seqr://request";
 
-const POLL_INTERVAL: Duration = Duration::from_secs(5);
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Cap a direct-delivery attempt; beyond this we assume the peer is unreachable and use
 /// the mailbox. Short enough to feel responsive, long enough for a real hole-punch.
 const DIRECT_TIMEOUT: Duration = Duration::from_secs(4);

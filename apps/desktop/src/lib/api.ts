@@ -89,6 +89,8 @@ export const api = {
 	sendAttachment: (conversationId: string, path: string): Promise<StoredMessage> =>
 		invoke("send_attachment", { conversationId, path }),
 	readAttachment: (attId: string): Promise<string> => invoke("read_attachment", { attId }),
+	saveAttachment: (attId: string, dest: string): Promise<void> =>
+		invoke("save_attachment", { attId, dest }),
 	openAttachment: (attId: string): Promise<void> => invoke("open_attachment", { attId }),
 	createGroup: (name: string, members: string[]): Promise<Conversation> =>
 		invoke("create_group", { name, members }),

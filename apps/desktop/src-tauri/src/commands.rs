@@ -266,7 +266,12 @@ pub async fn send_message(friend: String, body: String, state: Session<'_>) -> C
         state.inner(),
         format!("SEND 1:1 -> {} seq={}", &friend.chars().take(8).collect::<String>(), stored.seq),
     );
-    net::deliver(state.inner(), &friend, &packet_json).await;
+    // Deliver in the background so the composer never blocks (offline sends just queue
+    // in the mailbox; you can keep typing/sending).
+    let st = Arc::clone(state.inner());
+    tauri::async_runtime::spawn(async move {
+        net::deliver(&st, &friend, &packet_json).await;
+    });
     Ok(stored)
 }
 
@@ -363,9 +368,13 @@ pub async fn send_group_message(
             Ok((msg, Packet::Message(frame).to_json(), recipients))
         })?
     };
-    for recipient in &recipients {
-        net::deliver(state.inner(), recipient, &packet_json).await;
-    }
+    // Fan out in the background so the composer stays responsive.
+    let st = Arc::clone(state.inner());
+    tauri::async_runtime::spawn(async move {
+        for recipient in &recipients {
+            net::deliver(&st, recipient, &packet_json).await;
+        }
+    });
     Ok(stored)
 }
 
@@ -638,6 +647,17 @@ pub fn read_attachment(att_id: String, state: Session) -> CoreResult<String> {
     })?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{mime};base64,{b64}"))
+}
+
+/// Copy an attachment's bytes to a destination path the user chose (download).
+#[tauri::command]
+pub fn save_attachment(att_id: String, dest: String, state: Session) -> CoreResult<()> {
+    if !valid_att_id(&att_id) {
+        return Err(CoreError::Storage("bad attachment id".into()));
+    }
+    let src = attachment::attachment_path(&state.data_dir, &att_id);
+    std::fs::copy(&src, &dest).map_err(|e| CoreError::Storage(e.to_string()))?;
+    Ok(())
 }
 
 /// Open an attachment with the OS default application.

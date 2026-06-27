@@ -21,7 +21,7 @@ import { SettingsModal } from "./SettingsModal"
 import { ensureNotificationPermission, notify } from "../lib/notify"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
-import { open } from "@tauri-apps/plugin-dialog"
+import { open, save } from "@tauri-apps/plugin-dialog"
 import type { Friend } from "../lib/api"
 import "./Dashboard.scss"
 
@@ -464,25 +464,67 @@ function formatSize(n: number): string {
 	return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-// Renders an attachment: an inline thumbnail for images, a clickable chip otherwise.
+async function downloadAttachment(att: AttachmentInfo) {
+	try {
+		const dest = await save({ defaultPath: att.filename })
+		if (dest) await api.saveAttachment(att.id, dest)
+	} catch {
+		/* user cancelled */
+	}
+}
+
+// Renders an attachment: image thumbnail (opens a preview modal), or a downloadable chip.
 function AttachmentView({ att }: { att: AttachmentInfo }) {
 	const [src, setSrc] = useState("")
+	const [showModal, setShowModal] = useState(false)
 	const isImage = att.mime.startsWith("image/")
 	useEffect(() => {
 		if (isImage) api.readAttachment(att.id).then(setSrc).catch(() => {})
 	}, [att.id])
 
 	if (isImage) {
-		return src ? (
-			<img class="att-image" src={src} alt={att.filename} onClick={() => api.openAttachment(att.id)} />
-		) : (
-			<div class="att-loading muted">loading image…</div>
+		return (
+			<>
+				{src ? (
+					<img
+						class="att-image"
+						src={src}
+						alt={att.filename}
+						title="Click to preview"
+						onClick={() => setShowModal(true)}
+					/>
+				) : (
+					<div class="att-loading muted">loading image…</div>
+				)}
+				{showModal && (
+					<ImageModal att={att} src={src} onClose={() => setShowModal(false)} />
+				)}
+			</>
 		)
 	}
 	return (
-		<button class="att-file" title="Open" onClick={() => api.openAttachment(att.id)}>
+		<button class="att-file" title="Download" onClick={() => downloadAttachment(att)}>
 			📄 <span class="att-name">{att.filename}</span>
 			<span class="muted">({formatSize(att.size)})</span>
+			<span class="att-dl">⬇</span>
 		</button>
+	)
+}
+
+// Full-size image preview with a download button.
+function ImageModal({ att, src, onClose }: { att: AttachmentInfo; src: string; onClose: () => void }) {
+	return (
+		<div class="img-modal-backdrop" onClick={onClose}>
+			<div class="img-modal" onClick={(e) => e.stopPropagation()}>
+				<img class="img-modal-img" src={src} alt={att.filename} />
+				<div class="img-modal-bar">
+					<span class="muted">{att.filename} ({formatSize(att.size)})</span>
+					<div class="img-modal-actions">
+						<button class="primary" onClick={() => downloadAttachment(att)}>Download</button>
+						<button onClick={onClose}>Close</button>
+					</div>
+				</div>
+			</div>
+		</div>
 	)
 }

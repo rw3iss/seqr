@@ -67,6 +67,7 @@ pub fn run() {
             commands::send_message,
             commands::send_attachment,
             commands::read_attachment,
+            commands::save_attachment,
             commands::open_attachment,
             commands::create_group,
             commands::send_group_message,

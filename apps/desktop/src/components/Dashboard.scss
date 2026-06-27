@@ -307,4 +307,43 @@
 	max-width: 260px;
 
 	.att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.att-dl { color: $accent; margin-left: $space-1; }
+}
+
+.img-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.8);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 60;
+	padding: $space-5;
+}
+
+.img-modal {
+	display: flex;
+	flex-direction: column;
+	gap: $space-2;
+	max-width: 90vw;
+	max-height: 90vh;
+}
+
+.img-modal-img {
+	max-width: 90vw;
+	max-height: 78vh;
+	object-fit: contain;
+	border-radius: $radius-sm;
+}
+
+.img-modal-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: $space-4;
+}
+
+.img-modal-actions {
+	display: flex;
+	gap: $space-2;
 }
