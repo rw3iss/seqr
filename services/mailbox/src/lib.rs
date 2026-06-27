@@ -11,7 +11,7 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -45,6 +45,8 @@ pub fn build_router(state: Shared) -> Router {
         .route("/v1/ack", post(ack))
         .route("/v1/log", post(client_log).get(read_log))
         .route("/v1/presence", post(presence))
+        // Raise the request body cap above axum's 2 MB default so attachment chunks fit.
+        .layer(DefaultBodyLimit::max(6 * 1024 * 1024))
         .with_state(state)
 }
 

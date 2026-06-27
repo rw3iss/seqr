@@ -19,8 +19,9 @@ use super::CoreError;
 /// Application protocol identifier negotiated on every connection.
 pub const ALPN: &[u8] = b"seqr/chat/0";
 
-/// Max bytes accepted for a single frame (generous; a chat message is tiny).
-const MAX_FRAME: usize = 1 << 20;
+/// Max bytes accepted for a single frame. Must exceed one hex-encoded attachment chunk
+/// (~1.05 MB for a 512 KB plaintext chunk); 4 MB gives headroom.
+const MAX_FRAME: usize = 4 << 20;
 
 fn terr(e: impl std::fmt::Display) -> CoreError {
     CoreError::Transport(e.to_string())
