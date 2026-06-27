@@ -30,6 +30,8 @@ export function SettingsModal({
 		try {
 			// Asking the OS for permission the moment notifications are enabled.
 			if (patch.notifications_enabled) await ensureNotificationPermission()
+			// Apply screen-capture exclusion live (no-op on Linux).
+			if (patch.screen_security !== undefined) await api.setScreenSecurity(patch.screen_security)
 			await api.setSettings(next)
 			onSaved(next)
 		} catch (e) {
@@ -74,6 +76,21 @@ export function SettingsModal({
 									checked={settings.enter_sends}
 									disabled={saving}
 									onChange={(e) => update({ enter_sends: e.currentTarget.checked })}
+								/>
+							</label>
+							<label class="setting-row">
+								<div>
+									<div class="setting-name">Screen capture protection</div>
+									<div class="setting-desc muted">
+										Hide the window from screen recorders &amp; screenshots (macOS &amp;
+										Windows; not supported on Linux).
+									</div>
+								</div>
+								<input
+									type="checkbox"
+									checked={settings.screen_security}
+									disabled={saving}
+									onChange={(e) => update({ screen_security: e.currentTarget.checked })}
 								/>
 							</label>
 						</>

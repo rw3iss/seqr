@@ -71,6 +71,7 @@ export interface Conversation {
 export interface Settings {
 	notifications_enabled: boolean
 	enter_sends: boolean
+	screen_security: boolean
 }
 
 export const api = {
@@ -86,6 +87,8 @@ export const api = {
 	listFriends: (): Promise<Friend[]> => invoke("list_friends"),
 	getSettings: (): Promise<Settings> => invoke("get_settings"),
 	setSettings: (settings: Settings): Promise<void> => invoke("set_settings", { settings }),
+	setScreenSecurity: (enabled: boolean): Promise<void> =>
+		invoke("set_screen_security", { enabled }),
 	listRequests: (): Promise<Friend[]> => invoke("list_requests"),
 	acceptRequest: (signing: string): Promise<void> => invoke("accept_request", { signing }),
 	declineRequest: (signing: string): Promise<void> => invoke("decline_request", { signing }),

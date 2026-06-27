@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use base64::Engine;
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Manager, State};
 
 use seqr_protocol::ProfileBlob;
 
@@ -61,7 +61,9 @@ pub async fn create_account(
     let (key, data) = vault::create(&state.data_dir, &display_name, &password)?;
     let profile = identity::profile_for(&data)?;
     let (_, signing) = data.identity()?.secret_bytes();
+    let screen_security = data.settings.screen_security;
     state.set_unlocked(key, data);
+    apply_screen_security(&app, screen_security);
     net::start_transport(Arc::clone(state.inner()), app, signing).await?;
     Ok(profile)
 }
@@ -71,9 +73,18 @@ pub async fn unlock(password: String, state: Session<'_>, app: AppHandle) -> Cor
     let (key, data) = vault::unlock(&state.data_dir, &password)?;
     let profile = identity::profile_for(&data)?;
     let (_, signing) = data.identity()?.secret_bytes();
+    let screen_security = data.settings.screen_security;
     state.set_unlocked(key, data);
+    apply_screen_security(&app, screen_security);
     net::start_transport(Arc::clone(state.inner()), app, signing).await?;
     Ok(profile)
+}
+
+/// Apply the screen-capture-exclusion setting to the main window (no-op on Linux).
+fn apply_screen_security(app: &AppHandle, enabled: bool) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_content_protected(enabled);
+    }
 }
 
 #[tauri::command]
@@ -176,6 +187,13 @@ pub fn set_settings(settings: Settings, state: Session) -> CoreResult<()> {
         u.data.settings = settings;
         vault::save(&data_dir, &u.vault_key, &u.data)
     })
+}
+
+/// Exclude (or re-include) the window from screen capture. Effective on macOS/Windows;
+/// a no-op on Linux (no OS support).
+#[tauri::command]
+pub fn set_screen_security(enabled: bool, window: tauri::WebviewWindow) -> CoreResult<()> {
+    window.set_content_protected(enabled).map_err(|e| CoreError::Storage(e.to_string()))
 }
 
 /// All conversations (1:1 and group) for the conversations list.

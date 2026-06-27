@@ -12,6 +12,21 @@ you can rotate or revoke at any time.
 > and key rotation/revocation. Run two instances on separate machines to chat live.
 > See `CLAUDE.md` for architecture and notes.
 
+### 🛡️ Screen-capture protection
+
+Seqr can hide its window from **screen recorders and screenshots**, so the contents of
+your conversations don't leak into screen captures or screen-sharing. It's a toggle in
+**Settings → Screen capture protection** (on by default).
+
+- **macOS & Windows:** supported — the window is excluded from capture (recorders and
+  screenshots see it as blank/omitted), via the OS (`NSWindowSharingNone` /
+  `WDA_EXCLUDEFROMCAPTURE`).
+- **Linux:** **not supported** — neither X11 nor Wayland offers a reliable way to exclude
+  a window from capture, so the toggle has no effect there.
+
+It defeats *software* capture, not a camera pointed at the screen, and isn't absolute
+against an attacker with system-level access — but it stops casual/accidental leaks.
+
 ---
 
 ## How it works (in one picture)

@@ -59,6 +59,7 @@ pub fn run() {
             commands::list_friends,
             commands::get_settings,
             commands::set_settings,
+            commands::set_screen_security,
             commands::list_conversations,
             commands::get_history,
             commands::presence,

@@ -60,6 +60,9 @@ pub struct Settings {
     /// reverse (Enter = newline, Shift+Enter = send).
     #[serde(default = "default_true")]
     pub enter_sends: bool,
+    /// Exclude the window from screen capture/recording (macOS/Windows; no-op on Linux).
+    #[serde(default = "default_true")]
+    pub screen_security: bool,
 }
 
 fn default_true() -> bool {
@@ -68,7 +71,7 @@ fn default_true() -> bool {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { notifications_enabled: true, enter_sends: true }
+        Self { notifications_enabled: true, enter_sends: true, screen_security: true }
     }
 }
 
