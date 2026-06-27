@@ -158,18 +158,26 @@ A local `seqr.toml` is already written at `~/.config/com.seqr.app/seqr.toml`.
 ## Attachments (`core/attachment.rs`)
 
 Any file up to **1 GB**. Encrypted **per chunk** with the conversation key (AAD binds
-chunk to attachment id + index), sent as `Packet::AttachmentMeta` + `AttachmentChunk`
-through the normal deliver path (direct or mailbox). Receiver reassembles
-**streaming-to-disk** (never in memory) via `Reassembler`, keyed in
-`SessionState.reassembly`. Commands: `send_attachment`, `read_attachment` (data URL for
-images, ≤16MB), `open_attachment` (opener plugin). UI: 📎 picker (dialog plugin), native
-file drag-drop (`onDragDropEvent` → real paths), staged chips, image thumbnails / file
-chips, multi-line textarea with the Enter/Shift+Enter setting (`settings.enter_sends`).
+chunk to attachment id + index). Two transports, by ALPN:
+- **Direct (online, fast):** a dedicated `seqr/file/0` connection streams the header +
+  length-prefixed chunks over ONE bi-stream (`Transport::open_file_send` / `accept_file`,
+  `net::deliver_attachment`/`stream_attachment`). No per-chunk reconnect.
+- **Mailbox (offline fallback):** `AttachmentMeta` + `AttachmentChunk` packets via the
+  normal deliver path; receiver reassembles via the `SessionState.reassembly` map.
+Receiver always reassembles **streaming-to-disk** (never in memory) via `Reassembler`.
+The accept loop routes by `conn.alpn()`. Progress events (`seqr://attachment-progress`,
+`net::AttachmentProgress`) drive the UI's uploading badge + "Receiving…" placeholder.
 
-Caveats: very large files over the per-message-connect path are slow, and parking huge
-files on the mailbox is impractical — large files realistically need both peers online.
-Attachments are stored **decrypted at rest** under `<data_dir>/attachments/` (transit is
-fully E2E); encrypting them at rest with the vault key is a planned follow-up.
+Commands: `send_attachment` (background, stream-then-mailbox), `read_attachment` (data
+URL for images, ≤16MB), `save_attachment` (download/copy), `open_attachment`. UI: 📎
+picker (dialog plugin), native file drag-drop, image thumbnails → **preview modal +
+download**, file chips → **download** (save dialog), multi-line textarea with the
+Enter/Shift+Enter setting (`settings.enter_sends`).
+
+Caveats: parking huge files on the mailbox is impractical — large offline files
+realistically need both peers online (then the direct stream is fast). Attachments are
+stored **decrypted at rest** under `<data_dir>/attachments/`; encrypting at rest with the
+vault key is a planned follow-up.
 
 ## Verification (safety numbers)
 

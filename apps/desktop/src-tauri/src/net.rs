@@ -5,9 +5,12 @@
 //! the mailbox poll loop (offline delivery). Every inbound `Packet` flows through
 //! `process_incoming`, which dispatches chat messages (1:1 or group) and group invites.
 
+use std::io::Read;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use seqr_crypto::keys::Identity;
@@ -17,13 +20,30 @@ use crate::core::attachment::{self, Reassembler};
 use crate::core::mailbox::MailboxClient;
 use crate::core::packet::{AttachmentChunk, AttachmentMeta, GroupInvite, Packet};
 use crate::core::session::SessionState;
-use crate::core::transport::{recv_frame, Transport};
-use crate::core::vault::{Friend, Group, StoredMessage, VaultData};
+use crate::core::transport::{accept_file, recv_frame, FileSend, Transport, ALPN_FILE};
+use crate::core::vault::{AttachmentInfo, Friend, Group, StoredMessage, VaultData};
 use crate::core::{conversation, group, message, now_millis, vault, CoreError};
 
 pub const MESSAGE_EVENT: &str = "seqr://message";
 pub const GROUP_EVENT: &str = "seqr://group";
 pub const REQUEST_EVENT: &str = "seqr://request";
+pub const PROGRESS_EVENT: &str = "seqr://attachment-progress";
+
+/// Transfer progress for an attachment (sent or received), for the UI placeholder.
+#[derive(Debug, Clone, Serialize)]
+pub struct AttachmentProgress {
+    pub att_id: String,
+    pub conversation_id: String,
+    pub filename: String,
+    pub size: u64,
+    pub received: u32,
+    pub total: u32,
+    pub outgoing: bool,
+}
+
+pub fn emit_progress(app: &AppHandle, p: AttachmentProgress) {
+    let _ = app.emit(PROGRESS_EVENT, &p);
+}
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 /// Cap a direct-delivery attempt; beyond this we assume the peer is unreachable and use
@@ -108,16 +128,194 @@ pub async fn deliver(state: &Arc<SessionState>, recipient_hex: &str, payload: &[
     }
 }
 
+/// Send an attachment to each recipient: a fast **direct file stream** when reachable
+/// (one connection, all chunks), falling back to mailbox chunks when offline.
+pub async fn deliver_attachment(
+    state: &Arc<SessionState>,
+    app: &AppHandle,
+    recipients: Vec<String>,
+    meta: AttachmentMeta,
+    key: SymmetricKey,
+    src: PathBuf,
+) {
+    let meta_json = Packet::AttachmentMeta(meta.clone()).to_json();
+    for recipient in &recipients {
+        let signing: Option<[u8; 32]> =
+            hex::decode(recipient).ok().and_then(|v| v.try_into().ok());
+        let Some(signing) = signing else { continue };
+
+        let mut streamed = false;
+        if let Some(t) = state.transport() {
+            match t.open_file_send(&signing).await {
+                Ok(mut fs) => match stream_attachment(&mut fs, &meta_json, &meta, &key, &src, app).await {
+                    Ok(()) => match fs.finish().await {
+                        Ok(()) => {
+                            streamed = true;
+                            debug_log(state, format!("file: streamed {} -> {}", meta.filename, short(recipient)));
+                        }
+                        Err(e) => debug_log(state, format!("file: finish failed -> {} ({e})", short(recipient))),
+                    },
+                    Err(e) => debug_log(state, format!("file: stream error -> {} ({e})", short(recipient))),
+                },
+                Err(e) => debug_log(state, format!("file: connect failed -> {} ({e}); mailbox fallback", short(recipient))),
+            }
+        }
+        if !streamed {
+            // Offline fallback: park the header + chunks in the mailbox.
+            deliver(state, recipient, &meta_json).await;
+            mailbox_chunks(state, recipient, &meta, &key, &src).await;
+        }
+    }
+    emit_progress(app, progress_of(&meta, meta.chunks, true)); // final 100%
+}
+
+async fn stream_attachment(
+    fs: &mut FileSend,
+    meta_json: &[u8],
+    meta: &AttachmentMeta,
+    key: &SymmetricKey,
+    src: &PathBuf,
+    app: &AppHandle,
+) -> Result<(), CoreError> {
+    fs.write_frame(meta_json).await?;
+    let mut file = std::fs::File::open(src).map_err(|e| CoreError::Storage(e.to_string()))?;
+    let mut buf = vec![0u8; attachment::CHUNK_SIZE];
+    for index in 0..meta.chunks {
+        let filled = read_fill(&mut file, &mut buf)?;
+        let ct = attachment::seal_chunk(key, &meta.att_id, index, &buf[..filled]);
+        fs.write_frame(&ct).await?;
+        emit_progress(app, progress_of(meta, index + 1, true));
+    }
+    Ok(())
+}
+
+async fn mailbox_chunks(
+    state: &Arc<SessionState>,
+    recipient: &str,
+    meta: &AttachmentMeta,
+    key: &SymmetricKey,
+    src: &PathBuf,
+) {
+    let mut file = match std::fs::File::open(src) {
+        Ok(f) => f,
+        Err(e) => return debug_log(state, format!("file: reopen failed ({e})")),
+    };
+    let mut buf = vec![0u8; attachment::CHUNK_SIZE];
+    for index in 0..meta.chunks {
+        let filled = match read_fill(&mut file, &mut buf) {
+            Ok(n) => n,
+            Err(e) => return debug_log(state, format!("file: read failed ({e})")),
+        };
+        let ct = attachment::seal_chunk(key, &meta.att_id, index, &buf[..filled]);
+        let chunk = AttachmentChunk { att_id: meta.att_id.clone(), index, data: hex::encode(ct) };
+        deliver(state, recipient, &Packet::AttachmentChunk(chunk).to_json()).await;
+    }
+}
+
+fn read_fill(file: &mut std::fs::File, buf: &mut [u8]) -> Result<usize, CoreError> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match file.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) => return Err(CoreError::Storage(e.to_string())),
+        }
+    }
+    Ok(filled)
+}
+
 async fn accept_loop(transport: Transport, state: Arc<SessionState>, app: AppHandle) {
     while let Some(conn) = transport.accept().await {
         let state = state.clone();
         let app = app.clone();
+        let is_file = conn.alpn().as_deref() == Some(ALPN_FILE);
         tauri::async_runtime::spawn(async move {
-            match recv_frame(&conn).await {
-                Ok(bytes) => emit_inbound(&state, &app, &bytes, "direct"),
-                Err(e) => debug_log(&state, format!("accept: recv error ({e})")),
+            if is_file {
+                handle_file_connection(conn, state, app).await;
+            } else {
+                match recv_frame(&conn).await {
+                    Ok(bytes) => emit_inbound(&state, &app, &bytes, "direct"),
+                    Err(e) => debug_log(&state, format!("accept: recv error ({e})")),
+                }
             }
         });
+    }
+}
+
+/// Receive an attachment over a dedicated file stream: header, then chunks, with
+/// progress events; finalize to disk and record the message.
+async fn handle_file_connection(
+    conn: iroh::endpoint::Connection,
+    state: Arc<SessionState>,
+    app: AppHandle,
+) {
+    let mut fr = match accept_file(conn).await {
+        Ok(r) => r,
+        Err(e) => return debug_log(&state, format!("file: accept failed ({e})")),
+    };
+    let header = match fr.read_frame().await {
+        Ok(Some(h)) => h,
+        _ => return debug_log(&state, "file: no header".to_string()),
+    };
+    let meta: AttachmentMeta = match serde_json::from_slice(&header) {
+        Ok(m) => m,
+        Err(e) => return debug_log(&state, format!("file: bad header ({e})")),
+    };
+    let mut reassembler = match make_reassembler(&state, &meta) {
+        Ok(r) => r,
+        Err(e) => return debug_log(&state, format!("file: rejected ({e})")),
+    };
+    debug_log(&state, format!("file: receiving {} ({} chunks)", meta.filename, meta.chunks));
+    emit_progress(&app, progress_of(&meta, 0, false));
+
+    for index in 0..meta.chunks {
+        let chunk = match fr.read_frame().await {
+            Ok(Some(c)) => c,
+            _ => break,
+        };
+        if let Err(e) = reassembler.add_chunk(index, &chunk) {
+            return debug_log(&state, format!("file: chunk {index} failed ({e})"));
+        }
+        emit_progress(&app, progress_of(&meta, index + 1, false));
+    }
+    let _ = fr.finish().await;
+
+    let info = match reassembler.finalize() {
+        Ok(i) => i,
+        Err(e) => return debug_log(&state, format!("file: finalize failed ({e})")),
+    };
+    let stored = state.with_unlocked(|u| {
+        let msg = StoredMessage {
+            conversation_id: meta.conversation_id.clone(),
+            sender: meta.sender.clone(),
+            body: String::new(),
+            ts: now_millis(),
+            outgoing: false,
+            seq: meta.seq,
+            attachment: Some(info),
+        };
+        u.data.add_message(msg.clone());
+        vault::save(&state.data_dir, &u.vault_key, &u.data)?;
+        Ok(msg)
+    });
+    match stored {
+        Ok(msg) => {
+            debug_log(&state, format!("file: RECV complete {} from {}", meta.filename, short(&meta.sender)));
+            let _ = app.emit(MESSAGE_EVENT, &msg);
+        }
+        Err(e) => debug_log(&state, format!("file: store failed ({e})")),
+    }
+}
+
+fn progress_of(meta: &AttachmentMeta, received: u32, outgoing: bool) -> AttachmentProgress {
+    AttachmentProgress {
+        att_id: meta.att_id.clone(),
+        conversation_id: meta.conversation_id.clone(),
+        filename: meta.filename.clone(),
+        size: meta.size,
+        received,
+        total: meta.chunks,
+        outgoing,
     }
 }
 
@@ -285,19 +483,13 @@ fn conv_key_for(
     }
 }
 
-fn handle_attachment_meta(
-    state: &Arc<SessionState>,
-    meta: AttachmentMeta,
-) -> Result<Inbound, CoreError> {
+/// Verify an attachment header and build a fresh reassembler (resolving the conversation
+/// key). Shared by the mailbox-chunk path and the direct file-stream path.
+fn make_reassembler(state: &Arc<SessionState>, meta: &AttachmentMeta) -> Result<Reassembler, CoreError> {
     if meta.size > attachment::MAX_ATTACHMENT {
         return Err(CoreError::Storage("attachment exceeds size cap".into()));
     }
-    // Already reassembling this one? Ignore the duplicate header.
-    if state.reassembly.lock().expect("reassembly mutex").contains_key(&meta.att_id) {
-        return Ok(Inbound::Nothing);
-    }
-    // Verify the signature and resolve the conversation key.
-    let key = state.with_unlocked(|u| {
+    state.with_unlocked(|u| {
         let signer: [u8; 32] = hex::decode(&meta.sender)
             .ok()
             .and_then(|v| v.try_into().ok())
@@ -307,24 +499,34 @@ fn handle_attachment_meta(
             .and_then(|v| v.try_into().ok())
             .ok_or(CoreError::BadProfile("bad signature".into()))?;
         seqr_crypto::sign::verify_raw(&signer, &meta.signing_bytes(), &sig)?;
-        conv_key_for(&u.data, &meta.conversation_id, &meta.sender, meta.epoch)
-    })?;
+        let key = conv_key_for(&u.data, &meta.conversation_id, &meta.sender, meta.epoch)?;
+        let info = AttachmentInfo {
+            id: meta.att_id.clone(),
+            filename: meta.filename.clone(),
+            mime: meta.mime.clone(),
+            size: meta.size,
+        };
+        Reassembler::new(
+            &state.data_dir,
+            info,
+            meta.conversation_id.clone(),
+            meta.sender.clone(),
+            meta.seq,
+            key,
+            meta.chunks,
+        )
+    })
+}
 
-    let info = crate::core::vault::AttachmentInfo {
-        id: meta.att_id.clone(),
-        filename: meta.filename.clone(),
-        mime: meta.mime.clone(),
-        size: meta.size,
-    };
-    let reassembler = Reassembler::new(
-        &state.data_dir,
-        info,
-        meta.conversation_id.clone(),
-        meta.sender.clone(),
-        meta.seq,
-        key,
-        meta.chunks,
-    )?;
+fn handle_attachment_meta(
+    state: &Arc<SessionState>,
+    meta: AttachmentMeta,
+) -> Result<Inbound, CoreError> {
+    // Already reassembling this one? Ignore the duplicate header.
+    if state.reassembly.lock().expect("reassembly mutex").contains_key(&meta.att_id) {
+        return Ok(Inbound::Nothing);
+    }
+    let reassembler = make_reassembler(state, &meta)?;
     state.reassembly.lock().expect("reassembly mutex").insert(meta.att_id, reassembler);
     Ok(Inbound::Nothing)
 }

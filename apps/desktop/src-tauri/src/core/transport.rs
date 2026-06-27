@@ -11,17 +11,21 @@
 //!   sender:   open_bi → write frame → finish → read ack → close
 //!   receiver: accept_bi → read frame → write ack → finish → await close
 
-use iroh::endpoint::Connection;
+use iroh::endpoint::{Connection, RecvStream, SendStream};
 use iroh::{Endpoint, NodeAddr, NodeId, PublicKey, RelayMode, SecretKey, Watcher};
 
 use super::CoreError;
 
-/// Application protocol identifier negotiated on every connection.
-pub const ALPN: &[u8] = b"seqr/chat/0";
+/// ALPN for chat messages (one JSON frame per bi-stream).
+pub const ALPN_CHAT: &[u8] = b"seqr/chat/0";
+/// ALPN for attachment transfers (a header + length-prefixed chunks streamed over one
+/// bi-stream — avoids the per-chunk reconnect that makes message-path file sending slow).
+pub const ALPN_FILE: &[u8] = b"seqr/file/0";
 
-/// Max bytes accepted for a single frame. Must exceed one hex-encoded attachment chunk
-/// (~1.05 MB for a 512 KB plaintext chunk); 4 MB gives headroom.
+/// Max bytes accepted for a single frame/chunk. Exceeds one chunk (~1.05 MB) with headroom.
 const MAX_FRAME: usize = 4 << 20;
+/// How long to wait to open a file connection before falling back to the mailbox.
+const FILE_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
 
 fn terr(e: impl std::fmt::Display) -> CoreError {
     CoreError::Transport(e.to_string())
@@ -42,7 +46,7 @@ impl Transport {
         let secret = SecretKey::from_bytes(signing_secret);
         let endpoint = Endpoint::builder()
             .secret_key(secret)
-            .alpns(vec![ALPN.to_vec()])
+            .alpns(vec![ALPN_CHAT.to_vec(), ALPN_FILE.to_vec()])
             .discovery_n0()
             .bind()
             .await
@@ -55,12 +59,27 @@ impl Transport {
         let secret = SecretKey::from_bytes(signing_secret);
         let endpoint = Endpoint::builder()
             .secret_key(secret)
-            .alpns(vec![ALPN.to_vec()])
+            .alpns(vec![ALPN_CHAT.to_vec(), ALPN_FILE.to_vec()])
             .relay_mode(RelayMode::Disabled)
             .bind()
             .await
             .map_err(terr)?;
         Ok(Self { endpoint })
+    }
+
+    /// Open a dedicated file-transfer connection + stream to a peer (by signing key).
+    /// Fails fast if the peer is unreachable so the caller can fall back to the mailbox.
+    pub async fn open_file_send(&self, peer: &[u8; 32]) -> Result<FileSend, CoreError> {
+        let pk = PublicKey::from_bytes(peer).map_err(terr)?;
+        let conn = tokio::time::timeout(
+            FILE_CONNECT_TIMEOUT,
+            self.endpoint.connect(NodeAddr::new(pk), ALPN_FILE),
+        )
+        .await
+        .map_err(|_| CoreError::Transport("file connect timed out".into()))?
+        .map_err(terr)?;
+        let (send, recv) = conn.open_bi().await.map_err(terr)?;
+        Ok(FileSend { conn, send, recv })
     }
 
     pub fn id(&self) -> NodeId {
@@ -80,7 +99,7 @@ impl Transport {
 
     /// Send a frame to a fully-specified address (direct dial).
     pub async fn send(&self, addr: NodeAddr, frame: &[u8]) -> Result<(), CoreError> {
-        let conn = self.endpoint.connect(addr, ALPN).await.map_err(terr)?;
+        let conn = self.endpoint.connect(addr, ALPN_CHAT).await.map_err(terr)?;
         let (mut send, mut recv) = conn.open_bi().await.map_err(terr)?;
         send.write_all(frame).await.map_err(terr)?;
         send.finish().map_err(terr)?;
@@ -98,6 +117,78 @@ impl Transport {
     pub async fn close(&self) {
         self.endpoint.close().await;
     }
+}
+
+// ---- File-transfer streaming (one connection, one bi-stream, many length-prefixed
+// frames). Used for attachments to avoid per-chunk reconnect. ----
+
+async fn write_lp(send: &mut SendStream, data: &[u8]) -> Result<(), CoreError> {
+    send.write_all(&(data.len() as u32).to_be_bytes()).await.map_err(terr)?;
+    send.write_all(data).await.map_err(terr)?;
+    Ok(())
+}
+
+async fn read_lp(recv: &mut RecvStream) -> Result<Option<Vec<u8>>, CoreError> {
+    let mut len_buf = [0u8; 4];
+    // A clean end-of-stream (sender finished) surfaces as a read error here -> None.
+    if recv.read_exact(&mut len_buf).await.is_err() {
+        return Ok(None);
+    }
+    let len = u32::from_be_bytes(len_buf) as usize;
+    if len > MAX_FRAME {
+        return Err(CoreError::Transport("file frame too long".into()));
+    }
+    let mut buf = vec![0u8; len];
+    recv.read_exact(&mut buf).await.map_err(terr)?;
+    Ok(Some(buf))
+}
+
+/// Sender half of a file stream. Write the header then chunks, then `finish`.
+pub struct FileSend {
+    conn: Connection,
+    send: SendStream,
+    recv: RecvStream,
+}
+
+impl FileSend {
+    pub async fn write_frame(&mut self, data: &[u8]) -> Result<(), CoreError> {
+        write_lp(&mut self.send, data).await
+    }
+
+    /// Finish sending and await the receiver's ack so all data flushes before close.
+    pub async fn finish(mut self) -> Result<(), CoreError> {
+        self.send.finish().map_err(terr)?;
+        let _ack = self.recv.read_to_end(16).await.map_err(terr)?;
+        self.conn.close(0u32.into(), b"done");
+        Ok(())
+    }
+}
+
+/// Receiver half of a file stream. Read the header then chunks until `None`.
+pub struct FileRecv {
+    conn: Connection,
+    send: SendStream,
+    recv: RecvStream,
+}
+
+impl FileRecv {
+    pub async fn read_frame(&mut self) -> Result<Option<Vec<u8>>, CoreError> {
+        read_lp(&mut self.recv).await
+    }
+
+    /// Acknowledge receipt and wait for the sender to close.
+    pub async fn finish(mut self) -> Result<(), CoreError> {
+        let _ = self.send.write_all(b"k").await;
+        let _ = self.send.finish();
+        self.conn.closed().await;
+        Ok(())
+    }
+}
+
+/// Accept the file stream on a connection whose ALPN is [`ALPN_FILE`].
+pub async fn accept_file(conn: Connection) -> Result<FileRecv, CoreError> {
+    let (send, recv) = conn.accept_bi().await.map_err(terr)?;
+    Ok(FileRecv { conn, send, recv })
 }
 
 /// Read a single frame from an accepted connection and acknowledge it. Waits for the

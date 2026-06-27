@@ -193,6 +193,7 @@
 	.bubble-body { white-space: pre-wrap; word-break: break-word; }
 	.bubble-time { font-size: 10px; color: $text-muted; align-self: flex-end; }
 	.bubble-sender { font-size: 10px; color: $accent; font-family: $mono; }
+	.bubble-progress { font-size: 10px; }
 
 	&.in {
 		background: $bg-elevated;
@@ -206,6 +207,12 @@
 		align-self: flex-end;
 		margin-left: auto;
 	}
+}
+
+.recv-progress {
+	width: 200px;
+	height: 6px;
+	margin-top: 2px;
 }
 
 .chat-error {

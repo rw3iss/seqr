@@ -8,6 +8,7 @@ import {
 	errMessage,
 	type AppConfig,
 	type AttachmentInfo,
+	type AttachmentProgress,
 	type Conversation,
 	type ProfileBlob,
 	type Settings,
@@ -204,6 +205,7 @@ function ChatWindow({
 	onRemoved: () => void
 }) {
 	const [messages, setMessages] = useState<StoredMessage[]>([])
+	const [progress, setProgress] = useState<Record<string, AttachmentProgress>>({})
 	const [draft, setDraft] = useState("")
 	const [staged, setStaged] = useState<string[]>([])
 	const [sending, setSending] = useState(false)
@@ -276,15 +278,29 @@ function ChatWindow({
 			.catch((e) => setError(errMessage(e)))
 		refreshMembers()
 
-		// Append inbound messages belonging to this conversation.
+		// Append inbound messages; clear any in-progress placeholder for a completed file.
 		const unlisten = api.onMessage((m) => {
 			if (m.conversation_id === conversation.id) {
 				setMessages((prev) => [...prev, m])
+				if (m.attachment) {
+					setProgress((prev) => {
+						const next = { ...prev }
+						delete next[m.attachment!.id]
+						return next
+					})
+				}
 				scrollToEnd()
 			}
 		})
+		// Track transfer progress for this conversation.
+		const unProg = api.onAttachmentProgress((p) => {
+			if (p.conversation_id !== conversation.id) return
+			setProgress((prev) => ({ ...prev, [p.att_id]: p }))
+			scrollToEnd()
+		})
 		return () => {
 			unlisten.then((fn) => fn())
+			unProg.then((fn) => fn())
 		}
 	}, [conversation.id])
 
@@ -396,14 +412,36 @@ function ChatWindow({
 						<p>Messages are sealed with your shared key.</p>
 					</div>
 				)}
-				{messages.map((m, i) => (
-					<div key={i} class={"bubble" + (m.outgoing ? " out" : " in")}>
-						{isGroup && !m.outgoing && <span class="bubble-sender">{nameOf(m.sender)}</span>}
-						{m.attachment && <AttachmentView att={m.attachment} />}
-						{m.body && <span class="bubble-body">{m.body}</span>}
-						<span class="bubble-time">{formatTime(m.ts)}</span>
-					</div>
-				))}
+				{messages.map((m, i) => {
+					const p = m.attachment ? progress[m.attachment.id] : undefined
+					const uploading = p && p.outgoing && p.received < p.total
+					return (
+						<div key={i} class={"bubble" + (m.outgoing ? " out" : " in")}>
+							{isGroup && !m.outgoing && <span class="bubble-sender">{nameOf(m.sender)}</span>}
+							{m.attachment && <AttachmentView att={m.attachment} />}
+							{m.body && <span class="bubble-body">{m.body}</span>}
+							{uploading && (
+								<span class="bubble-progress muted">
+									Uploading… {Math.round((p!.received / p!.total) * 100)}%
+								</span>
+							)}
+							<span class="bubble-time">{formatTime(m.ts)}</span>
+						</div>
+					)
+				})}
+
+				{/* Incoming files still arriving (no message bubble yet). */}
+				{Object.values(progress)
+					.filter((p) => !p.outgoing && p.received < p.total)
+					.map((p) => (
+						<div key={p.att_id} class="bubble in">
+							<span class="bubble-body">📎 Receiving {p.filename}…</span>
+							<progress class="recv-progress" value={p.received} max={p.total} />
+							<span class="bubble-progress muted">
+								{Math.round((p.received / p.total) * 100)}% of {formatSize(p.size)}
+							</span>
+						</div>
+					))}
 			</div>
 
 			{error && <p class="error-text chat-error">{error}</p>}

@@ -7,6 +7,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 export const MESSAGE_EVENT = "seqr://message"
 export const GROUP_EVENT = "seqr://group"
 export const REQUEST_EVENT = "seqr://request"
+export const PROGRESS_EVENT = "seqr://attachment-progress"
 
 export interface ProfileBlob {
 	v: number
@@ -37,6 +38,16 @@ export interface AttachmentInfo {
 	filename: string
 	mime: string
 	size: number
+}
+
+export interface AttachmentProgress {
+	att_id: string
+	conversation_id: string
+	filename: string
+	size: number
+	received: number
+	total: number
+	outgoing: boolean
 }
 
 export interface StoredMessage {
@@ -107,6 +118,8 @@ export const api = {
 		listen<string>(GROUP_EVENT, (e) => cb(e.payload)),
 	onRequest: (cb: (signing: string) => void): Promise<UnlistenFn> =>
 		listen<string>(REQUEST_EVENT, (e) => cb(e.payload)),
+	onAttachmentProgress: (cb: (p: AttachmentProgress) => void): Promise<UnlistenFn> =>
+		listen<AttachmentProgress>(PROGRESS_EVENT, (e) => cb(e.payload)),
 }
 
 // Tauri rejects with the CoreError string; normalize for display.

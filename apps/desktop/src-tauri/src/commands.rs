@@ -4,7 +4,6 @@
 //! `CoreError` (rendered to a friendly string for the UI). No business logic lives
 //! here; that belongs in the core modules and `net`.
 
-use std::io::Read;
 use std::sync::Arc;
 
 use base64::Engine;
@@ -15,7 +14,7 @@ use seqr_protocol::ProfileBlob;
 
 use crate::core::config::AppConfig;
 use crate::core::mailbox::MailboxClient;
-use crate::core::packet::{AttachmentChunk, AttachmentMeta, GroupInvite, Packet};
+use crate::core::packet::{AttachmentMeta, GroupInvite, Packet};
 use crate::core::session::SessionState;
 use crate::core::vault::{AttachmentInfo, Friend, Group, Settings, StoredMessage};
 use crate::core::{
@@ -534,6 +533,7 @@ pub async fn send_attachment(
     conversation_id: String,
     path: String,
     state: Session<'_>,
+    app: AppHandle,
 ) -> CoreResult<StoredMessage> {
     let src = std::path::PathBuf::from(&path);
     let fs_meta = std::fs::metadata(&src).map_err(|e| CoreError::Storage(e.to_string()))?;
@@ -547,7 +547,7 @@ pub async fn send_attachment(
     let chunks = attachment::chunk_count(size);
 
     // Phase 1 (locked): build+sign meta, persist the outgoing message.
-    let (stored, meta_json, recipients, key) = {
+    let (stored, meta, recipients, key) = {
         let data_dir = state.data_dir.clone();
         state.with_unlocked(|u| {
             let me = u.data.identity()?;
@@ -577,7 +577,7 @@ pub async fn send_attachment(
             let msg = stored_outgoing(&conversation_id, &my_signing, "", seq, Some(info));
             u.data.add_message(msg.clone());
             vault::save(&data_dir, &u.vault_key, &u.data)?;
-            Ok((msg, Packet::AttachmentMeta(meta).to_json(), recipients, key))
+            Ok((msg, meta, recipients, key))
         })?
     };
 
@@ -587,40 +587,11 @@ pub async fn send_attachment(
     std::fs::copy(&src, attachment::attachment_path(&state.data_dir, &att_id))
         .map_err(|e| CoreError::Storage(e.to_string()))?;
 
-    // Deliver in the background so the UI shows the message at once (and a slow or
-    // offline transfer never blocks the composer).
+    // Deliver in the background: a direct file stream when the peer is reachable, else
+    // mailbox chunks. The UI shows the message at once and gets progress events.
     let st = Arc::clone(state.inner());
     tauri::async_runtime::spawn(async move {
-        for r in &recipients {
-            net::deliver(&st, r, &meta_json).await;
-        }
-        let mut file = match std::fs::File::open(&src) {
-            Ok(f) => f,
-            Err(e) => {
-                eprintln!("seqr: attachment read failed: {e}");
-                return;
-            }
-        };
-        let mut buf = vec![0u8; attachment::CHUNK_SIZE];
-        for index in 0..chunks {
-            let mut filled = 0usize;
-            while filled < buf.len() {
-                match file.read(&mut buf[filled..]) {
-                    Ok(0) => break,
-                    Ok(n) => filled += n,
-                    Err(e) => {
-                        eprintln!("seqr: attachment read error: {e}");
-                        return;
-                    }
-                }
-            }
-            let ct = attachment::seal_chunk(&key, &att_id, index, &buf[..filled]);
-            let chunk = AttachmentChunk { att_id: att_id.clone(), index, data: hex::encode(ct) };
-            let cj = Packet::AttachmentChunk(chunk).to_json();
-            for r in &recipients {
-                net::deliver(&st, r, &cj).await;
-            }
-        }
+        net::deliver_attachment(&st, &app, recipients, meta, key, src).await;
     });
     Ok(stored)
 }
