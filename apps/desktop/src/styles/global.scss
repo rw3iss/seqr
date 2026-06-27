@@ -19,6 +19,8 @@ body {
 
 button {
 	font-family: inherit;
+	font-size: inherit;
+	line-height: 1.4;
 	cursor: pointer;
 	border: 1px solid $border;
 	background: $bg-elevated;
@@ -43,6 +45,8 @@ button {
 
 input, textarea {
 	font-family: inherit;
+	font-size: inherit;
+	line-height: 1.4;
 	background: $bg;
 	color: $text;
 	border: 1px solid $border;
