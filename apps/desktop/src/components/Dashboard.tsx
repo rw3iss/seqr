@@ -323,6 +323,23 @@ function ChatWindow({
 		setStaged((prev) => [...prev, ...(Array.isArray(sel) ? sel : [sel])])
 	}
 
+	// Pasting a file/image into the input stages it like a drop.
+	async function onPaste(e: ClipboardEvent) {
+		const files = e.clipboardData?.files
+		if (!files || files.length === 0) return
+		e.preventDefault()
+		for (const f of Array.from(files)) {
+			try {
+				const bytes = new Uint8Array(await f.arrayBuffer())
+				const name = f.name && f.name.trim() ? f.name : `pasted-${Date.now()}.${extFromMime(f.type)}`
+				const path = await api.stagePastedFile(name, bytesToBase64(bytes))
+				setStaged((prev) => [...prev, path])
+			} catch (err) {
+				setError(errMessage(err))
+			}
+		}
+	}
+
 	function unstage(path: string) {
 		setStaged((prev) => prev.filter((p) => p !== path))
 	}
@@ -461,10 +478,11 @@ function ChatWindow({
 				<button class="icon-btn attach-btn" title="Attach files" onClick={pickFiles}>📎</button>
 				<textarea
 					rows={1}
-					placeholder={`Message ${conversation.title}…  (drag files here)`}
+					placeholder={`Message ${conversation.title}…  (drag or paste files here)`}
 					value={draft}
 					onInput={(e) => setDraft(e.currentTarget.value)}
 					onKeyDown={onKeyDown}
+					onPaste={onPaste}
 				/>
 				<button
 					class="primary"
@@ -493,6 +511,27 @@ function ChatWindow({
 function formatTime(ts: number): string {
 	const d = new Date(ts)
 	return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+	let binary = ""
+	const chunk = 0x8000
+	for (let i = 0; i < bytes.length; i += chunk) {
+		binary += String.fromCharCode(...bytes.subarray(i, i + chunk))
+	}
+	return btoa(binary)
+}
+
+function extFromMime(mime: string): string {
+	const map: Record<string, string> = {
+		"image/png": "png",
+		"image/jpeg": "jpg",
+		"image/gif": "gif",
+		"image/webp": "webp",
+		"application/pdf": "pdf",
+		"text/plain": "txt",
+	}
+	return map[mime] ?? "bin"
 }
 
 function formatSize(n: number): string {

@@ -12,13 +12,95 @@
 
 use std::collections::HashSet;
 use std::fs::File;
-use std::io::{Seek, SeekFrom, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use seqr_crypto::{aead, SymmetricKey};
 
 use super::vault::AttachmentInfo;
 use super::CoreError;
+
+// ---- At-rest encryption ----
+//
+// On disk, an attachment is stored as a sequence of `[u32 BE sealed_len][sealed]`
+// records, each chunk sealed with the **vault key** (separate from the conversation key
+// used in transit). So local storage is encrypted too; the file never sits in plaintext
+// on disk beyond a transient reassembly temp.
+
+fn rest_aad(att_id: &str, index: u32) -> Vec<u8> {
+    format!("seqr-att-rest|{att_id}|{index}").into_bytes()
+}
+
+/// Encrypt a plaintext file (`src`) to the at-rest sealed file (`dest`) with `vault_key`.
+pub fn encrypt_file_to_rest(
+    vault_key: &SymmetricKey,
+    att_id: &str,
+    src: &Path,
+    dest: &Path,
+) -> Result<(), CoreError> {
+    let mut input = File::open(src)?;
+    let mut out = File::create(dest)?;
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    let mut index = 0u32;
+    loop {
+        let n = fill(&mut input, &mut buf)?;
+        if n == 0 && index > 0 {
+            break; // done (handles empty-file case via the index==0 seal below)
+        }
+        let sealed = aead::seal(vault_key, &buf[..n], &rest_aad(att_id, index));
+        out.write_all(&(sealed.len() as u32).to_be_bytes())?;
+        out.write_all(&sealed)?;
+        index += 1;
+        if n < CHUNK_SIZE {
+            break;
+        }
+    }
+    Ok(())
+}
+
+/// Decrypt an at-rest file, writing plaintext to `out`.
+pub fn decrypt_rest_to_writer(
+    vault_key: &SymmetricKey,
+    att_id: &str,
+    src: &Path,
+    out: &mut impl Write,
+) -> Result<(), CoreError> {
+    let mut input = File::open(src)?;
+    let mut index = 0u32;
+    loop {
+        let mut len_buf = [0u8; 4];
+        if input.read_exact(&mut len_buf).is_err() {
+            break; // EOF
+        }
+        let len = u32::from_be_bytes(len_buf) as usize;
+        let mut sealed = vec![0u8; len];
+        input.read_exact(&mut sealed).map_err(|e| CoreError::Storage(e.to_string()))?;
+        let plain = aead::open(vault_key, &sealed, &rest_aad(att_id, index))?;
+        out.write_all(&plain)?;
+        index += 1;
+    }
+    Ok(())
+}
+
+/// Decrypt an at-rest file fully into memory (for inline image preview; caller caps size).
+pub fn read_rest_bytes(vault_key: &SymmetricKey, att_id: &str, src: &Path) -> Result<Vec<u8>, CoreError> {
+    let mut out = Vec::new();
+    decrypt_rest_to_writer(vault_key, att_id, src, &mut out)?;
+    Ok(out)
+}
+
+/// Read up to `buf.len()` bytes, looping until full or EOF. Returns bytes read.
+fn fill(file: &mut File, buf: &mut [u8]) -> Result<usize, CoreError> {
+    let mut filled = 0;
+    while filled < buf.len() {
+        match file.read(&mut buf[filled..]) {
+            Ok(0) => break,
+            Ok(n) => filled += n,
+            Err(e) => return Err(CoreError::Storage(e.to_string())),
+        }
+    }
+    Ok(filled)
+}
 
 /// Plaintext bytes per chunk (ciphertext is a little larger: +nonce +tag).
 pub const CHUNK_SIZE: usize = 512 * 1024;
@@ -93,6 +175,7 @@ pub struct Reassembler {
     pub sender: String,
     pub seq: u64,
     key: SymmetricKey,
+    vault_key: SymmetricKey,
     expected: u32,
     received: HashSet<u32>,
     temp_path: PathBuf,
@@ -101,6 +184,7 @@ pub struct Reassembler {
 }
 
 impl Reassembler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         data_dir: &Path,
         info: AttachmentInfo,
@@ -108,6 +192,7 @@ impl Reassembler {
         sender: String,
         seq: u64,
         key: SymmetricKey,
+        vault_key: SymmetricKey,
         expected: u32,
     ) -> Result<Self, CoreError> {
         std::fs::create_dir_all(attachments_dir(data_dir))?;
@@ -120,6 +205,7 @@ impl Reassembler {
             sender,
             seq,
             key,
+            vault_key,
             expected,
             received: HashSet::new(),
             temp_path,
@@ -140,11 +226,13 @@ impl Reassembler {
         Ok(self.received.len() as u32 == self.expected)
     }
 
-    /// Flush and move the temp file to its final location.
+    /// Flush the plaintext temp file, encrypt it to the at-rest file with the vault key,
+    /// then delete the temp.
     pub fn finalize(mut self) -> Result<AttachmentInfo, CoreError> {
         self.file.flush()?;
         drop(self.file);
-        std::fs::rename(&self.temp_path, &self.final_path)?;
+        encrypt_file_to_rest(&self.vault_key, &self.info.id, &self.temp_path, &self.final_path)?;
+        let _ = std::fs::remove_file(&self.temp_path);
         Ok(self.info)
     }
 }
@@ -183,14 +271,17 @@ mod tests {
         let chunk1 = b"BBB".to_vec();
         let size = (CHUNK_SIZE + chunk1.len()) as u64;
         let info = AttachmentInfo { id: id.clone(), filename: "f.bin".into(), mime: "x".into(), size };
+        let vault_key = [3u8; 32];
         let c0 = seal_chunk(&key, &id, 0, &chunk0);
         let c1 = seal_chunk(&key, &id, 1, &chunk1);
-        let mut r = Reassembler::new(&dir, info, "c".into(), "s".into(), 0, key, 2).unwrap();
+        let mut r =
+            Reassembler::new(&dir, info, "c".into(), "s".into(), 0, key, vault_key, 2).unwrap();
         // out of order: chunk 1 then 0
         assert!(!r.add_chunk(1, &c1).unwrap());
         assert!(r.add_chunk(0, &c0).unwrap());
         let info = r.finalize().unwrap();
-        let bytes = std::fs::read(attachment_path(&dir, &info.id)).unwrap();
+        // On disk it's encrypted at rest; decrypt with the vault key to verify.
+        let bytes = read_rest_bytes(&vault_key, &info.id, &attachment_path(&dir, &info.id)).unwrap();
         assert_eq!(bytes.len() as u64, size);
         assert_eq!(&bytes[..CHUNK_SIZE], &chunk0[..]);
         assert_eq!(&bytes[CHUNK_SIZE..], b"BBB");

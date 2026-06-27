@@ -565,7 +565,7 @@ pub async fn send_attachment(
     let chunks = attachment::chunk_count(size);
 
     // Phase 1 (locked): build+sign meta, persist the outgoing message.
-    let (stored, meta, recipients, key) = {
+    let (stored, meta, recipients, key, vault_key) = {
         let data_dir = state.data_dir.clone();
         state.with_unlocked(|u| {
             let me = u.data.identity()?;
@@ -595,15 +595,19 @@ pub async fn send_attachment(
             let msg = stored_outgoing(&conversation_id, &my_signing, "", seq, Some(info));
             u.data.add_message(msg.clone());
             vault::save(&data_dir, &u.vault_key, &u.data)?;
-            Ok((msg, meta, recipients, key))
+            Ok((msg, meta, recipients, key, u.vault_key))
         })?
     };
 
-    // Keep our own copy so the sender's UI can display it immediately (done before we
-    // return, so read_attachment succeeds right away).
+    // Keep our own copy (encrypted at rest with the vault key) so the sender's UI can
+    // display it immediately.
     std::fs::create_dir_all(attachment::attachments_dir(&state.data_dir)).ok();
-    std::fs::copy(&src, attachment::attachment_path(&state.data_dir, &att_id))
-        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    attachment::encrypt_file_to_rest(
+        &vault_key,
+        &att_id,
+        &src,
+        &attachment::attachment_path(&state.data_dir, &att_id),
+    )?;
 
     // Deliver in the background: a direct file stream when the peer is reachable, else
     // mailbox chunks. The UI shows the message at once and gets progress events.
@@ -614,52 +618,64 @@ pub async fn send_attachment(
     Ok(stored)
 }
 
-/// Return a small attachment as a `data:` URL for inline display (images). Refuses
-/// files larger than 16 MB — use `open_attachment` for those.
+/// Return a small attachment as a `data:` URL for inline display (images). Decrypts the
+/// at-rest blob with the vault key. Refuses originals larger than 16 MB.
 #[tauri::command]
 pub fn read_attachment(att_id: String, state: Session) -> CoreResult<String> {
     if !valid_att_id(&att_id) {
         return Err(CoreError::Storage("bad attachment id".into()));
     }
     let path = attachment::attachment_path(&state.data_dir, &att_id);
-    let fs_meta = std::fs::metadata(&path).map_err(|e| CoreError::Storage(e.to_string()))?;
-    if fs_meta.len() > 16 * 1024 * 1024 {
-        return Err(CoreError::Storage("too large to preview inline".into()));
-    }
-    let bytes = std::fs::read(&path).map_err(|e| CoreError::Storage(e.to_string()))?;
-    let mime = state.with_unlocked(|u| {
-        Ok(u.data
+    let (vault_key, mime, size) = state.with_unlocked(|u| {
+        let (mime, size) = u
+            .data
             .messages
             .iter()
-            .find_map(|m| m.attachment.as_ref().filter(|a| a.id == att_id).map(|a| a.mime.clone()))
-            .unwrap_or_else(|| "application/octet-stream".to_string()))
+            .find_map(|m| m.attachment.as_ref().filter(|a| a.id == att_id).map(|a| (a.mime.clone(), a.size)))
+            .unwrap_or_else(|| ("application/octet-stream".to_string(), 0));
+        Ok((u.vault_key, mime, size))
     })?;
+    if size > 16 * 1024 * 1024 {
+        return Err(CoreError::Storage("too large to preview inline".into()));
+    }
+    let bytes = attachment::read_rest_bytes(&vault_key, &att_id, &path)?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
     Ok(format!("data:{mime};base64,{b64}"))
 }
 
-/// Copy an attachment's bytes to a destination path the user chose (download).
+/// Write pasted/clipboard file bytes to a temp file and return its path, so the UI can
+/// stage it for sending exactly like a drag-dropped file.
+#[tauri::command]
+pub fn stage_pasted_file(filename: String, data: String, state: Session) -> CoreResult<String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data.as_bytes())
+        .map_err(|_| CoreError::Storage("bad clipboard data".into()))?;
+    let dir = state.data_dir.join("paste-tmp");
+    std::fs::create_dir_all(&dir).map_err(|e| CoreError::Storage(e.to_string()))?;
+    // Sanitize the filename to a safe basename.
+    let safe: String = std::path::Path::new(&filename)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("pasted")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ' '))
+        .collect();
+    let safe = if safe.trim().is_empty() { "pasted".to_string() } else { safe };
+    let path = dir.join(format!("{}-{}", attachment::new_attachment_id(), safe));
+    std::fs::write(&path, &bytes).map_err(|e| CoreError::Storage(e.to_string()))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+/// Decrypt an attachment to a destination path the user chose (download).
 #[tauri::command]
 pub fn save_attachment(att_id: String, dest: String, state: Session) -> CoreResult<()> {
     if !valid_att_id(&att_id) {
         return Err(CoreError::Storage("bad attachment id".into()));
     }
+    let vault_key = state.with_unlocked(|u| Ok(u.vault_key))?;
     let src = attachment::attachment_path(&state.data_dir, &att_id);
-    std::fs::copy(&src, &dest).map_err(|e| CoreError::Storage(e.to_string()))?;
-    Ok(())
-}
-
-/// Open an attachment with the OS default application.
-#[tauri::command]
-pub fn open_attachment(att_id: String, state: Session, app: AppHandle) -> CoreResult<()> {
-    use tauri_plugin_opener::OpenerExt;
-    if !valid_att_id(&att_id) {
-        return Err(CoreError::Storage("bad attachment id".into()));
-    }
-    let path = attachment::attachment_path(&state.data_dir, &att_id);
-    app.opener()
-        .open_path(path.to_string_lossy().to_string(), None::<&str>)
-        .map_err(|e| CoreError::Storage(e.to_string()))?;
+    let mut out = std::fs::File::create(&dest).map_err(|e| CoreError::Storage(e.to_string()))?;
+    attachment::decrypt_rest_to_writer(&vault_key, &att_id, &src, &mut out)?;
     Ok(())
 }
 

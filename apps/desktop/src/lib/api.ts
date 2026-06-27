@@ -105,7 +105,8 @@ export const api = {
 	readAttachment: (attId: string): Promise<string> => invoke("read_attachment", { attId }),
 	saveAttachment: (attId: string, dest: string): Promise<void> =>
 		invoke("save_attachment", { attId, dest }),
-	openAttachment: (attId: string): Promise<void> => invoke("open_attachment", { attId }),
+	stagePastedFile: (filename: string, data: string): Promise<string> =>
+		invoke("stage_pasted_file", { filename, data }),
 	createGroup: (name: string, members: string[]): Promise<Conversation> =>
 		invoke("create_group", { name, members }),
 	sendGroupMessage: (groupId: string, body: string): Promise<StoredMessage> =>

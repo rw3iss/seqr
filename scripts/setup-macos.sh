@@ -18,8 +18,15 @@ if ! command -v brew >/dev/null 2>&1; then
 fi
 command -v node >/dev/null 2>&1 || brew install node
 command -v pnpm >/dev/null 2>&1 || brew install pnpm
-if ! command -v cargo >/dev/null 2>&1; then
-    echo "==> Installing Rust"
+
+# Make an existing rustup install visible in this (possibly fresh) shell, so we don't
+# needlessly reinstall it.
+# shellcheck disable=SC1091
+[ -f "$HOME/.cargo/env" ] && source "$HOME/.cargo/env"
+if command -v cargo >/dev/null 2>&1; then
+    echo "==> Rust present: $(cargo --version)"
+else
+    echo "==> Installing Rust (not found)"
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
     # shellcheck disable=SC1091
     source "$HOME/.cargo/env"

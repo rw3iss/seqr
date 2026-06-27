@@ -168,16 +168,19 @@ Receiver always reassembles **streaming-to-disk** (never in memory) via `Reassem
 The accept loop routes by `conn.alpn()`. Progress events (`seqr://attachment-progress`,
 `net::AttachmentProgress`) drive the UI's uploading badge + "Receiving…" placeholder.
 
-Commands: `send_attachment` (background, stream-then-mailbox), `read_attachment` (data
-URL for images, ≤16MB), `save_attachment` (download/copy), `open_attachment`. UI: 📎
-picker (dialog plugin), native file drag-drop, image thumbnails → **preview modal +
-download**, file chips → **download** (save dialog), multi-line textarea with the
-Enter/Shift+Enter setting (`settings.enter_sends`).
+**At rest:** stored **encrypted with the vault key** under `<data_dir>/attachments/<id>`
+as length-prefixed sealed chunks (`encrypt_file_to_rest` / `decrypt_rest_to_writer`,
+AAD `seqr-att-rest|id|index`). Reassembler writes a plaintext `.part` temp then encrypts
+it on finalize. `read_attachment`/`save_attachment` decrypt with the vault key.
 
-Caveats: parking huge files on the mailbox is impractical — large offline files
-realistically need both peers online (then the direct stream is fast). Attachments are
-stored **decrypted at rest** under `<data_dir>/attachments/`; encrypting at rest with the
-vault key is a planned follow-up.
+Commands: `send_attachment` (background, stream-then-mailbox), `read_attachment` (data
+URL for images, ≤16MB), `save_attachment` (decrypt to a chosen path), `stage_pasted_file`
+(clipboard bytes → temp path). UI: 📎 picker (dialog plugin), native file **drag-drop**
+and **paste-to-attach**, image thumbnails → **preview modal + download**, file chips →
+**download** (save dialog), multi-line textarea with the Enter/Shift+Enter setting.
+
+Caveat: parking huge files on the mailbox is impractical — large offline files
+realistically need both peers online (then the direct stream is fast).
 
 ## Verification (safety numbers)
 

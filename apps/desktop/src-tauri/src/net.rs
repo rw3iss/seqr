@@ -513,6 +513,7 @@ fn make_reassembler(state: &Arc<SessionState>, meta: &AttachmentMeta) -> Result<
             meta.sender.clone(),
             meta.seq,
             key,
+            u.vault_key,
             meta.chunks,
         )
     })

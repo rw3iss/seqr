@@ -69,7 +69,7 @@ pub fn run() {
             commands::send_attachment,
             commands::read_attachment,
             commands::save_attachment,
-            commands::open_attachment,
+            commands::stage_pasted_file,
             commands::create_group,
             commands::send_group_message,
             commands::rotate_direct,
