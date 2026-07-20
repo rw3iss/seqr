@@ -7,6 +7,8 @@
 #   scripts/android.sh --target x86_64 # for an x86_64 emulator
 #   scripts/android.sh --release       # release APK (needs a signing keystore configured)
 #   scripts/android.sh --dev           # live-reload dev (tauri android dev)
+#   scripts/android.sh --mirror        # also open scrcpy screen mirroring (debug builds only:
+#                                      #   release enables FLAG_SECURE, which renders black)
 #   scripts/android.sh --no-launch     # build + install, don't auto-launch
 #   scripts/android.sh --uninstall-old # also remove the stale com.seqr.app.android package first
 #
@@ -20,6 +22,7 @@ PROFILE="--debug"
 MODE="build"                        # build | dev
 LAUNCH=1
 UNINSTALL_OLD=0
+MIRROR=0
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -27,6 +30,7 @@ while [ $# -gt 0 ]; do
 		--debug)          PROFILE="--debug" ;;
 		--target)         shift; TARGET="${1:?--target needs an ABI}" ;;
 		--dev)            MODE="dev" ;;
+		--mirror)         MIRROR=1 ;;
 		--no-launch)      LAUNCH=0 ;;
 		--uninstall-old)  UNINSTALL_OLD=1 ;;
 		-h|--help)        sed -n '2,20p' "$0"; exit 0 ;;
@@ -59,6 +63,20 @@ fi
 
 ADB="$ANDROID_HOME/platform-tools/adb"
 
+# Open scrcpy screen mirroring in the background (best-effort). Note: release builds set
+# FLAG_SECURE, which makes the app window render black in scrcpy — mirror debug builds.
+start_mirror() {
+	[ "$MIRROR" = "1" ] || return 0
+	if ! command -v scrcpy >/dev/null; then
+		echo "scrcpy not installed — skipping --mirror (install: 'sudo dnf install scrcpy' or 'brew install scrcpy')"
+		return 0
+	fi
+	local serial; serial="$($ADB get-serialno 2>/dev/null)"
+	echo "mirroring $serial with scrcpy…"
+	nohup scrcpy -s "$serial" --window-title "Seqr (Android)" >/dev/null 2>&1 &
+	disown 2>/dev/null || true
+}
+
 echo "ANDROID_HOME=$ANDROID_HOME"
 echo "NDK_HOME=$NDK_HOME"
 echo "JAVA_HOME=${JAVA_HOME:-<system default>}"
@@ -80,6 +98,7 @@ fi
 
 # --- dev mode short-circuits --------------------------------------------------
 if [ "$MODE" = "dev" ]; then
+	start_mirror
 	exec pnpm tauri android dev --target "$TARGET"
 fi
 
@@ -107,3 +126,5 @@ if [ "$LAUNCH" = "1" ]; then
 		&& echo "launched $APP_ID" \
 		|| echo "(couldn't auto-launch; open Seqr from the app drawer)"
 fi
+
+start_mirror

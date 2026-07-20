@@ -10,13 +10,16 @@ import java.io.File
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
-    // Screen-capture protection (parity with the desktop screen-security feature):
-    // blocks screenshots, screen recording, and the app's preview thumbnail. Secure by
-    // default for an E2E chat app; can be made toggleable via a plugin bridge later.
-    window.setFlags(
-      WindowManager.LayoutParams.FLAG_SECURE,
-      WindowManager.LayoutParams.FLAG_SECURE,
-    )
+    // Screen-capture protection (parity with the desktop screen-security feature): blocks
+    // screenshots, screen recording, and the app's preview thumbnail. Enabled in release
+    // only — a secure window renders black in scrcpy/mirroring, so debug builds stay
+    // mirrorable for development (see scripts/android.sh --mirror).
+    if (!BuildConfig.DEBUG) {
+      window.setFlags(
+        WindowManager.LayoutParams.FLAG_SECURE,
+        WindowManager.LayoutParams.FLAG_SECURE,
+      )
+    }
     super.onCreate(savedInstanceState)
 
     // Fetch the FCM registration token and stash it in the app's files dir, where the Rust

@@ -9,6 +9,14 @@ html, body, #root {
 	margin: 0;
 }
 
+#root {
+	// Inset content past the system bars on mobile (Android 15+ forces edge-to-edge, so the
+	// webview draws behind the status/navigation bars). Requires viewport-fit=cover. These
+	// are 0 on desktop, so it's a no-op there.
+	padding: env(safe-area-inset-top) env(safe-area-inset-right)
+		env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
 body {
 	background: $bg;
 	color: $text;
