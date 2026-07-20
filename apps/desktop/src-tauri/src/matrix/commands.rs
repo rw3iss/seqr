@@ -61,6 +61,12 @@ pub async fn matrix_login(
     state: MxState<'_>,
 ) -> Result<MatrixStatus, String> {
     let db_path = state.store_dir();
+    // A fresh login must start from a clean store: the new random passphrase has to match a
+    // newly created store. A leftover store from a previous attempt (e.g. a failed login,
+    // which still creates the store before the credentials are checked) was encrypted with
+    // a different, now-discarded passphrase and would otherwise fail with
+    // "Failed to initialize the store cipher: … aead::Error".
+    let _ = std::fs::remove_dir_all(&db_path);
     std::fs::create_dir_all(&db_path).map_err(|e| e.to_string())?;
 
     let passphrase = new_passphrase();
