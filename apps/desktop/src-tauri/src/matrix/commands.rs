@@ -73,16 +73,22 @@ pub async fn matrix_login(
     std::fs::create_dir_all(&db_path).map_err(|e| e.to_string())?;
 
     let passphrase = new_passphrase();
+    eprintln!("[seqr] matrix_login: building client");
     let client = build_client(&state.homeserver_url, &db_path, &passphrase)
         .await
         .map_err(|e| e.to_string())?;
 
+    eprintln!("[seqr] matrix_login: sending login for user={username}");
     client
         .matrix_auth()
         .login_username(&username, &password)
-        .initial_device_display_name("Seqr Desktop")
+        .initial_device_display_name("Seqr")
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            eprintln!("[seqr] matrix_login: login error: {e}");
+            e.to_string()
+        })?;
+    eprintln!("[seqr] matrix_login: login OK");
 
     // Persist the session so we come back logged-in on the next launch.
     let user_session = client

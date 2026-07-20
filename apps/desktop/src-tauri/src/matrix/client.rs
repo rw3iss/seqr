@@ -45,11 +45,22 @@ pub async fn build_client(
     db_path: &PathBuf,
     passphrase: &str,
 ) -> Result<Client, matrix_sdk::ClientBuildError> {
-    Client::builder()
+    use matrix_sdk::config::RequestConfig;
+    use std::time::Duration;
+    eprintln!("[seqr] build_client: start (homeserver={homeserver})");
+    // Bound every request so a stalled connection surfaces as an error instead of an
+    // infinite "Working…" hang. retry_timeout caps the whole retry window.
+    let req = RequestConfig::new()
+        .timeout(Duration::from_secs(30))
+        .disable_retry();
+    let r = Client::builder()
         .homeserver_url(homeserver)
+        .request_config(req)
         .sqlite_store(db_path, Some(passphrase))
         .build()
-        .await
+        .await;
+    eprintln!("[seqr] build_client: done ok={}", r.is_ok());
+    r
 }
 
 /// A fresh 32-byte hex passphrase for the SQLite stores.

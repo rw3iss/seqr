@@ -22,6 +22,23 @@ use crate::core::session::SessionState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // rustls 0.23 refuses to auto-select a crypto provider when more than one is compiled in
+    // (reqwest/matrix-sdk pull aws-lc-rs; iroh pulls ring). Install one explicitly *before*
+    // any TLS is set up, or matrix-sdk's client build panics with "Could not automatically
+    // determine the process-level CryptoProvider". This surfaced on Android as an infinite
+    // login hang (the panic killed the async task so the command never returned).
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // Diagnostics: matrix-sdk/reqwest/rustls use `tracing`; route it to stdout, which Tauri
+    // redirects to Android logcat (tag RustStdoutStderr). Filterable via RUST_LOG.
+    {
+        use tracing_subscriber::{fmt, EnvFilter};
+        let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            EnvFilter::new("info,matrix_sdk=debug,matrix_sdk_base=debug,matrix_sdk_http_client=trace,reqwest=debug")
+        });
+        let _ = fmt().with_env_filter(filter).with_ansi(false).try_init();
+    }
+
     // WebKitGTK's DMABUF renderer crashes on many Wayland compositors with
     // "Error 71 (Protocol error)". Disable it before the web view initializes, unless
     // the user has set the variable themselves. Packaged builds rely on this (the dev
