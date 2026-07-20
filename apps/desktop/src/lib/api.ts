@@ -52,6 +52,12 @@ export interface MatrixRoom {
 	is_dm: boolean
 }
 
+export interface MatrixReaction {
+	key: string
+	count: number
+	mine: boolean
+}
+
 export interface MatrixMessage {
 	room_id: string
 	event_id: string | null
@@ -61,6 +67,7 @@ export interface MatrixMessage {
 	msgtype: string
 	ts: number
 	outgoing: boolean
+	reactions: MatrixReaction[]
 }
 
 export interface MatrixMember {
@@ -82,6 +89,7 @@ export interface MatrixVerificationStatus {
 }
 
 export const MATRIX_MESSAGE_EVENT = "matrix://message"
+export const MATRIX_ROOM_UPDATED_EVENT = "matrix://room-updated"
 
 export interface AttachmentInfo {
 	id: string
@@ -144,6 +152,12 @@ export const api = {
 		invoke("matrix_room_messages", { roomId }),
 	matrixSendMessage: (roomId: string, body: string): Promise<void> =>
 		invoke("matrix_send_message", { roomId, body }),
+	matrixReact: (roomId: string, eventId: string, key: string): Promise<void> =>
+		invoke("matrix_react", { roomId, eventId, key }),
+	matrixRedact: (roomId: string, eventId: string): Promise<void> =>
+		invoke("matrix_redact", { roomId, eventId }),
+	onMatrixRoomUpdated: (cb: (roomId: string) => void): Promise<UnlistenFn> =>
+		listen<string>(MATRIX_ROOM_UPDATED_EVENT, (e) => cb(e.payload)),
 	matrixCreateDm: (userId: string): Promise<string> => invoke("matrix_create_dm", { userId }),
 	matrixCreateRoom: (name: string, invite: string[]): Promise<string> =>
 		invoke("matrix_create_room", { name, invite }),

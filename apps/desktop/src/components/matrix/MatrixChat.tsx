@@ -9,6 +9,8 @@ import { api, errMessage, type MatrixMessage, type MatrixRoom, type MatrixStatus
 import { MatrixSecurity } from "./MatrixSecurity"
 import "./matrix.scss"
 
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "🎉"]
+
 interface Props {
 	status: MatrixStatus
 	onLogout: () => void
@@ -53,13 +55,27 @@ export function MatrixChat({ status, onLogout }: Props) {
 		return () => un?.()
 	}, [])
 
+	function reloadActive() {
+		const room = activeRef.current
+		if (!room) return
+		api.matrixRoomMessages(room).then(setMessages).catch(() => setMessages([]))
+	}
 	useEffect(() => {
 		if (!active) {
 			setMessages([])
 			return
 		}
-		api.matrixRoomMessages(active).then(setMessages).catch(() => setMessages([]))
+		reloadActive()
 	}, [active])
+
+	// Reactions / deletes change the timeline without a new message → re-fetch that room.
+	useEffect(() => {
+		let un: UnlistenFn | undefined
+		api.onMatrixRoomUpdated((roomId) => {
+			if (roomId === activeRef.current) reloadActive()
+		}).then((f) => (un = f))
+		return () => un?.()
+	}, [])
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -176,10 +192,48 @@ export function MatrixChat({ status, onLogout }: Props) {
 
 						<div class="mx-messages">
 							{messages.map((m) => (
-								<div key={m.event_id ?? m.ts} class={`mx-msg${m.outgoing ? " out" : ""}`}>
-									{!m.outgoing && <div class="mx-msg-sender">{m.sender}</div>}
-									<MessageBody roomId={activeRoom.id} msg={m} onError={setError} />
-									{m.ts > 0 && <div class="mx-msg-time">{formatTime(m.ts)}</div>}
+								<div key={m.event_id ?? m.ts} class={`mx-msg-wrap${m.outgoing ? " out" : ""}`}>
+									<div class={`mx-msg${m.outgoing ? " out" : ""}`}>
+										{!m.outgoing && <div class="mx-msg-sender">{m.sender}</div>}
+										<MessageBody roomId={activeRoom.id} msg={m} onError={setError} />
+										{m.ts > 0 && <div class="mx-msg-time">{formatTime(m.ts)}</div>}
+									</div>
+
+									{m.reactions.length > 0 && (
+										<div class="mx-reactions">
+											{m.reactions.map((r) => (
+												<button
+													key={r.key}
+													class={`mx-reaction${r.mine ? " mine" : ""}`}
+													onClick={() => m.event_id && api.matrixReact(activeRoom.id, m.event_id, r.key).catch((e) => setError(errMessage(e)))}
+												>
+													{r.key} {r.count}
+												</button>
+											))}
+										</div>
+									)}
+
+									{m.event_id && (
+										<div class="mx-msg-actions">
+											{QUICK_REACTIONS.map((e) => (
+												<button
+													key={e}
+													title={`React ${e}`}
+													onClick={() => api.matrixReact(activeRoom.id, m.event_id!, e).catch((err) => setError(errMessage(err)))}
+												>
+													{e}
+												</button>
+											))}
+											{m.outgoing && (
+												<button
+													title="Delete"
+													onClick={() => api.matrixRedact(activeRoom.id, m.event_id!).catch((err) => setError(errMessage(err)))}
+												>
+													🗑️
+												</button>
+											)}
+										</div>
+									)}
 								</div>
 							))}
 							<div ref={bottomRef} />

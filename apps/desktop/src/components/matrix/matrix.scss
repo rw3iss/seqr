@@ -135,6 +135,57 @@
 	gap: $space-2;
 }
 
+// Wrapper around a bubble + its reactions/actions, so actions can reveal on hover.
+.mx-msg-wrap {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	max-width: 75%;
+
+	&.out {
+		align-self: flex-end;
+		align-items: flex-end;
+	}
+
+	.mx-msg { max-width: 100%; }
+
+	.mx-msg-actions { visibility: hidden; }
+	&:hover .mx-msg-actions { visibility: visible; }
+}
+
+.mx-reactions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	margin-top: 3px;
+}
+
+.mx-reaction {
+	font-size: 12px;
+	padding: 1px 6px;
+	border-radius: 10px;
+	background: $bg-elevated;
+	border: 1px solid $border;
+
+	&.mine { border-color: $accent; }
+}
+
+.mx-msg-actions {
+	display: flex;
+	gap: 2px;
+	margin-top: 2px;
+
+	button {
+		font-size: 12px;
+		padding: 1px 4px;
+		background: transparent;
+		border: none;
+		opacity: 0.7;
+
+		&:hover { opacity: 1; }
+	}
+}
+
 .mx-msg {
 	max-width: 70%;
 	padding: $space-2 $space-3;

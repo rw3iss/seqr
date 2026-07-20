@@ -97,6 +97,8 @@ pub fn run() {
             matrix::commands::matrix_rooms,
             matrix::commands::matrix_send_message,
             matrix::commands::matrix_room_messages,
+            matrix::commands::matrix_react,
+            matrix::commands::matrix_redact,
             matrix::commands::matrix_create_dm,
             matrix::commands::matrix_create_room,
             matrix::commands::matrix_invite,

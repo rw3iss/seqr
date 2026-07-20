@@ -17,7 +17,7 @@ use crate::matrix::client::{
     build_client, new_passphrase, read_encrypted_session, write_encrypted_session, ClientSession,
     FullSession,
 };
-use crate::matrix::sync::MatrixMessage;
+use crate::matrix::sync::{MatrixMessage, MatrixReaction};
 use crate::matrix::MatrixState;
 
 type MxState<'a> = State<'a, Arc<MatrixState>>;
@@ -293,6 +293,10 @@ pub async fn matrix_room_messages(
     opts.limit = UInt::from(50u32);
     let resp = room.messages(opts).await.map_err(|e| e.to_string())?;
 
+    // target event id -> (reaction key -> (count, whether we reacted))
+    let mut reactions: std::collections::HashMap<String, std::collections::HashMap<String, (u64, bool)>> =
+        std::collections::HashMap::new();
+
     let mut out = Vec::new();
     for ev in resp.chunk {
         let json = ev.raw().json();
@@ -300,17 +304,38 @@ pub async fn matrix_room_messages(
             Ok(v) => v,
             Err(_) => continue,
         };
-        if v.get("type").and_then(|t| t.as_str()) != Some("m.room.message") {
+        let ty = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+        let content = &v["content"];
+        let sender = v.get("sender").and_then(|s| s.as_str()).unwrap_or("").to_string();
+
+        if ty == "m.reaction" {
+            let rel = &content["m.relates_to"];
+            if let (Some(target), Some(key)) = (
+                rel.get("event_id").and_then(|e| e.as_str()),
+                rel.get("key").and_then(|k| k.as_str()),
+            ) {
+                let entry = reactions
+                    .entry(target.to_string())
+                    .or_default()
+                    .entry(key.to_string())
+                    .or_insert((0, false));
+                entry.0 += 1;
+                if me.as_deref() == Some(sender.as_str()) {
+                    entry.1 = true;
+                }
+            }
             continue;
         }
-        let content = &v["content"];
+
+        if ty != "m.room.message" {
+            continue;
+        }
         let Some(body) = content.get("body").and_then(|b| b.as_str()) else { continue };
         let msgtype = content
             .get("msgtype")
             .and_then(|m| m.as_str())
             .unwrap_or("m.text")
             .to_string();
-        let sender = v.get("sender").and_then(|s| s.as_str()).unwrap_or("").to_string();
         out.push(MatrixMessage {
             room_id: room_id.clone(),
             event_id: v.get("event_id").and_then(|e| e.as_str()).map(String::from),
@@ -319,10 +344,68 @@ pub async fn matrix_room_messages(
             body: body.to_string(),
             msgtype,
             ts: v.get("origin_server_ts").and_then(|t| t.as_u64()).unwrap_or(0),
+            reactions: Vec::new(),
         });
     }
+
+    // Attach aggregated reactions to their target messages.
+    for msg in out.iter_mut() {
+        if let Some(eid) = &msg.event_id {
+            if let Some(map) = reactions.get(eid) {
+                let mut list: Vec<MatrixReaction> = map
+                    .iter()
+                    .map(|(key, (count, mine))| MatrixReaction {
+                        key: key.clone(),
+                        count: *count,
+                        mine: *mine,
+                    })
+                    .collect();
+                list.sort_by(|a, b| b.count.cmp(&a.count).then(a.key.cmp(&b.key)));
+                msg.reactions = list;
+            }
+        }
+    }
+
     out.reverse(); // backward() yields newest-first; the UI wants oldest-first
     Ok(out)
+}
+
+/// React to a message with an emoji (or any annotation key).
+#[tauri::command]
+pub async fn matrix_react(
+    room_id: String,
+    event_id: String,
+    key: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::events::reaction::ReactionEventContent;
+    use matrix_sdk::ruma::events::relation::Annotation;
+
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    let eid = matrix_sdk::ruma::EventId::parse(&event_id).map_err(|e| e.to_string())?;
+    room.send(ReactionEventContent::new(Annotation::new(eid, key)))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Delete (redact) a message.
+#[tauri::command]
+pub async fn matrix_redact(
+    room_id: String,
+    event_id: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    let eid = matrix_sdk::ruma::EventId::parse(&event_id).map_err(|e| e.to_string())?;
+    room.redact(&eid, None, None).await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

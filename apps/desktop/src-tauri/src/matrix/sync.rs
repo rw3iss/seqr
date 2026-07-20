@@ -8,13 +8,27 @@
 use matrix_sdk::{
     config::SyncSettings,
     event_handler::Ctx,
-    ruma::events::room::message::SyncRoomMessageEvent,
+    ruma::events::{
+        reaction::SyncReactionEvent, room::message::SyncRoomMessageEvent,
+        room::redaction::SyncRoomRedactionEvent,
+    },
     Client, Room,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 pub const MATRIX_MESSAGE_EVENT: &str = "matrix://message";
+/// Emitted (with the room id) when a room's timeline changed in a way that needs a
+/// re-fetch — a reaction or a redaction (delete).
+pub const MATRIX_ROOM_UPDATED_EVENT: &str = "matrix://room-updated";
+
+/// An aggregated reaction on a message.
+#[derive(Serialize, Clone)]
+pub struct MatrixReaction {
+    pub key: String,
+    pub count: u64,
+    pub mine: bool,
+}
 
 /// A decrypted message, flattened for the UI. For media (`m.image`/`m.file`/…) `body` is
 /// the filename/caption; the UI fetches the bytes on demand via `matrix_read_media`.
@@ -29,6 +43,9 @@ pub struct MatrixMessage {
     /// Milliseconds since the Unix epoch (origin_server_ts).
     pub ts: u64,
     pub outgoing: bool,
+    /// Aggregated reactions (populated by history fetch; empty for live events).
+    #[serde(default)]
+    pub reactions: Vec<MatrixReaction>,
 }
 
 /// Spawn the sync loop and register the live message handler. Idempotency is the caller's
@@ -50,9 +67,23 @@ pub fn start(client: Client, app: AppHandle) {
                     msgtype: orig.content.msgtype.msgtype().to_string(),
                     ts: u64::from(orig.origin_server_ts.get()),
                     outgoing: me.as_deref() == Some(orig.sender.as_ref()),
+                    reactions: Vec::new(),
                 };
                 let _ = ctx.emit(MATRIX_MESSAGE_EVENT, &msg);
             }
+        },
+    );
+
+    // Reactions and redactions (deletes) change a room's timeline without being new
+    // messages; ping the UI to re-fetch the affected room.
+    client.add_event_handler(
+        |_ev: SyncReactionEvent, room: Room, ctx: Ctx<AppHandle>| async move {
+            let _ = ctx.emit(MATRIX_ROOM_UPDATED_EVENT, &room.room_id().to_string());
+        },
+    );
+    client.add_event_handler(
+        |_ev: SyncRoomRedactionEvent, room: Room, ctx: Ctx<AppHandle>| async move {
+            let _ = ctx.emit(MATRIX_ROOM_UPDATED_EVENT, &room.room_id().to_string());
         },
     );
 
