@@ -201,10 +201,13 @@ Continuwuity **v26.6.2** is installed, running, and verified on `162.35.181.92`.
 advertised; full round-trip **register → login → whoami → createRoom → send → sync → read-back** all `200`.
 Documented in the box's `~/README.md` (Deployed apps) and `/var/www/seqr-matrix/README.md`.
 
-**Remaining for public exposure (blocked on one user action):** the nginx vhost
-(`/var/www/seqr-matrix/deploy/matrix.rw3iss.com.conf`) is staged but not active — it needs the
-gray-cloud DNS record for `matrix.rw3iss.com` (§6.0.2) before certbot can issue a cert. Once the
-record exists: `certbot certonly --webroot`, copy the vhost into `conf.d`, reload nginx.
+**Public exposure — ✅ DONE (2026-07-20).** The `matrix.rw3iss.com` gray-cloud DNS record was added
+(resolves directly to `162.35.181.92`). Issued a Let's Encrypt cert (`certbot certonly --webroot`,
+valid to 2026-10-18, auto-renew scheduled) and activated the reverse-proxy vhost
+(`/etc/nginx/conf.d/matrix.rw3iss.com.conf`, `client_max_body_size 1g`, 600 s proxy timeouts for
+`/sync`). Verified over public TLS: `https://matrix.rw3iss.com/_matrix/client/versions`, the
+`/.well-known/matrix/client` delegation hint, and a full **password login → `@ryan:rw3iss.com`**
+round-trip through nginx. **The homeserver is publicly reachable and ready for the M2 client.**
 
 ---
 
@@ -316,8 +319,8 @@ Matrix gives us these largely "for free" — prioritized:
   domain, and confirm push accounts (E).
 - **M1 — Homeserver up. ✅ DONE (2026-07-20, see §6.5).** Freed server RAM, installed Continuwuity
   v26.6.2 (static musl, systemd, federation-off, registration-token gated), admin `@ryan:rw3iss.com`,
-  verified register→login→room→send→sync→read-back locally, documented. **Pending only** the public
-  TLS vhost, which is staged and blocked on the `matrix.rw3iss.com` gray-cloud DNS record (§6.0.2).
+  verified register→login→room→send→sync→read-back locally, documented. **Public exposure done too:**
+  `https://matrix.rw3iss.com` live (gray-cloud DNS + Let's Encrypt + nginx proxy), public login verified.
 - **M2 — Desktop client MVP.** New Tauri Rust core on `matrix-sdk`: login, restore session (persistent),
   RoomListService list, Timeline for one room, send/receive **E2E** text. Exit criteria: two desktop
   installs chat encrypted; session & keys survive restart.
