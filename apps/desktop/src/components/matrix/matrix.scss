@@ -307,6 +307,30 @@
 	margin-top: $space-4;
 }
 
+.mx-verify { border-color: $accent; }
+
+.mx-emojis {
+	display: flex;
+	flex-wrap: wrap;
+	gap: $space-3;
+	margin: $space-3 0;
+}
+
+.mx-emoji {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 64px;
+
+	.mx-emoji-sym { font-size: 28px; }
+	.mx-emoji-desc { font-size: 11px; color: $text-muted; text-align: center; }
+}
+
+.mx-device-btns {
+	display: flex;
+	gap: $space-1;
+}
+
 .mx-composer {
 	display: flex;
 	gap: $space-2;

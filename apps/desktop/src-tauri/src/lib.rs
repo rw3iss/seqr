@@ -113,6 +113,9 @@ pub fn run() {
             matrix::commands::matrix_recovery_enable,
             matrix::commands::matrix_recover,
             matrix::commands::matrix_verification_status,
+            matrix::commands::matrix_request_verification,
+            matrix::commands::matrix_confirm_verification,
+            matrix::commands::matrix_cancel_verification,
             matrix::commands::matrix_register_pusher,
         ])
         .run(tauri::generate_context!())

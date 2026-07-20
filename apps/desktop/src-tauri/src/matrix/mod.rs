@@ -11,10 +11,12 @@
 pub mod client;
 pub mod commands;
 pub mod sync;
+pub mod verification;
 
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
+use matrix_sdk::encryption::verification::SasVerification;
 use matrix_sdk::Client;
 use tokio::sync::RwLock;
 
@@ -28,6 +30,8 @@ pub struct MatrixState {
     client: RwLock<Option<Client>>,
     /// Whether the background sync loop has been started (start it exactly once).
     syncing: AtomicBool,
+    /// The active SAS verification, if one is in progress.
+    sas: RwLock<Option<SasVerification>>,
 }
 
 impl MatrixState {
@@ -37,6 +41,7 @@ impl MatrixState {
             homeserver_url,
             client: RwLock::new(None),
             syncing: AtomicBool::new(false),
+            sas: RwLock::new(None),
         }
     }
 

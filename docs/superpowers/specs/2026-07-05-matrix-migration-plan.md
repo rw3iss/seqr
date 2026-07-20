@@ -336,8 +336,13 @@ Matrix gives us these largely "for free" — prioritized:
   image bubbles + download chips, room header/Leave.
 - **M4 — Trust & recovery. ✅ DONE (2026-07-20).** `matrix_devices`, `matrix_verify_device`
   (cross-sign), `matrix_recovery_enable` (bootstrap cross-signing + encrypted backup → recovery key),
-  `matrix_recover`, `matrix_verification_status`. UI: `MatrixSecurity` modal. *Follow-up:* interactive
-  SAS-emoji/QR verification (stateful `m.key.verification.*` handling) — manual per-device verify ships now.
+  `matrix_recover`, `matrix_verification_status`. UI: `MatrixSecurity` modal.
+  - ✅ **Interactive SAS verification** (`matrix/verification.rs`): request/accept/confirm/cancel
+    commands + a driver that surfaces the 7 emojis (`matrix://verification-emojis`) and completion;
+    auto-accepts incoming to-device requests (self-verification). UI: emoji-compare panel + "Verify
+    (emoji)" on devices. ⚠️ **Compile-verified but not two-device tested** — validate with a real
+    self-verification. Manual "Trust" (cross-sign) remains as the no-emoji fallback.
+  - ✅ **Session encrypted at rest** (Argon2id via `seqr-crypto`); unlock-on-launch.
 - **M5 — Android.** ✅ **Responsive UI pass done** (single-pane mobile layout, `matrix.scss` media
   query + back button). ⚠️ **Gated on your machine:** `tauri android init` + device/emulator run need
   the Android SDK/NDK + a device. Exact commands in the **cross-platform runbook**

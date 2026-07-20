@@ -173,7 +173,7 @@ pub async fn matrix_start_sync(app: AppHandle, state: MxState<'_>) -> Result<(),
         let guard = state.client.read().await;
         guard.as_ref().ok_or("not logged in")?.clone()
     };
-    crate::matrix::sync::start(client, app);
+    crate::matrix::sync::start(client, app, Arc::clone(state.inner()));
     Ok(())
 }
 
@@ -727,6 +727,49 @@ pub async fn matrix_recover(recovery_key: String, state: MxState<'_>) -> Result<
         .recover(&recovery_key)
         .await
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Start an interactive SAS verification of one of our own devices. Emojis arrive via the
+/// `matrix://verification-emojis` event; confirm with `matrix_confirm_verification`.
+#[tauri::command]
+pub async fn matrix_request_verification(
+    device_id: String,
+    app: AppHandle,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    let request = {
+        let guard = state.client.read().await;
+        let client = guard.as_ref().ok_or("not logged in")?;
+        let user = client.user_id().ok_or("not logged in")?;
+        let did: matrix_sdk::ruma::OwnedDeviceId = device_id.as_str().into();
+        let device = client
+            .encryption()
+            .get_device(user, &did)
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or("unknown device")?;
+        device.request_verification().await.map_err(|e| e.to_string())?
+    };
+    let st = Arc::clone(state.inner());
+    tokio::spawn(async move { crate::matrix::verification::drive_request(request, app, st).await });
+    Ok(())
+}
+
+/// Confirm that the SAS emojis matched (call on both devices).
+#[tauri::command]
+pub async fn matrix_confirm_verification(state: MxState<'_>) -> Result<(), String> {
+    let sas = state.sas.read().await.clone().ok_or("no active verification")?;
+    sas.confirm().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Cancel the in-progress verification.
+#[tauri::command]
+pub async fn matrix_cancel_verification(state: MxState<'_>) -> Result<(), String> {
+    if let Some(sas) = state.sas.write().await.take() {
+        let _ = sas.cancel().await;
+    }
     Ok(())
 }
 

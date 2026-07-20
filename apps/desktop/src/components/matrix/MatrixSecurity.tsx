@@ -3,10 +3,12 @@
 // backup (recovery) or restore it from a recovery key on a new device.
 
 import { useEffect, useState } from "preact/hooks"
+import type { UnlistenFn } from "@tauri-apps/api/event"
 import {
 	api,
 	errMessage,
 	type MatrixDevice,
+	type MatrixEmoji,
 	type MatrixVerificationStatus,
 } from "../../lib/api"
 import "./matrix.scss"
@@ -20,12 +22,26 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 	const [busy, setBusy] = useState(false)
 	const [error, setError] = useState("")
 	const [note, setNote] = useState("")
+	const [emojis, setEmojis] = useState<MatrixEmoji[] | null>(null)
 
 	function refresh() {
 		api.matrixVerificationStatus().then(setStatus).catch(() => {})
 		api.matrixDevices().then(setDevices).catch(() => {})
 	}
 	useEffect(refresh, [])
+
+	// Live verification events (emojis to compare, completion).
+	useEffect(() => {
+		const uns: UnlistenFn[] = []
+		api.onVerificationEmojis((e) => setEmojis(e)).then((u) => uns.push(u))
+		api.onVerificationDone(() => {
+			setEmojis(null)
+			setNote("Device verified ✅")
+			refresh()
+		}).then((u) => uns.push(u))
+		api.onVerificationRequest(() => setNote("Incoming verification…")).then((u) => uns.push(u))
+		return () => uns.forEach((u) => u())
+	}, [])
 
 	async function run(fn: () => Promise<void>) {
 		setBusy(true)
@@ -46,6 +62,41 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 			<div class="mx-modal" onClick={(e) => e.stopPropagation()}>
 				<h2>Security &amp; recovery</h2>
 
+				{emojis && (
+					<section class="mx-sec mx-verify">
+						<h3>Compare emoji</h3>
+						<p class="muted" style="font-size:12px">
+							These should match on both devices. Confirm on each.
+						</p>
+						<div class="mx-emojis">
+							{emojis.map((e, i) => (
+								<div class="mx-emoji" key={i}>
+									<span class="mx-emoji-sym">{e.symbol}</span>
+									<span class="mx-emoji-desc">{e.description}</span>
+								</div>
+							))}
+						</div>
+						<div class="mx-new-actions">
+							<button
+								class="primary"
+								disabled={busy}
+								onClick={() => run(() => api.matrixConfirmVerification())}
+							>
+								They match
+							</button>
+							<button
+								disabled={busy}
+								onClick={() => {
+									api.matrixCancelVerification().catch(() => {})
+									setEmojis(null)
+								}}
+							>
+								They don't
+							</button>
+						</div>
+					</section>
+				)}
+
 				<section class="mx-sec">
 					<h3>Status</h3>
 					<div class="mx-sec-row">
@@ -65,13 +116,23 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 								{d.display_name || d.device_id}
 								{d.is_current && " (this device)"} — {d.verified ? "✅" : "unverified"}
 							</span>
-							{!d.verified && (
-								<button
-									disabled={busy}
-									onClick={() => run(() => api.matrixVerifyDevice(d.device_id))}
-								>
-									Verify
-								</button>
+							{!d.verified && !d.is_current && (
+								<span class="mx-device-btns">
+									<button
+										disabled={busy}
+										title="Compare emoji with the other device"
+										onClick={() => api.matrixRequestVerification(d.device_id).catch((e) => setError(errMessage(e)))}
+									>
+										Verify (emoji)
+									</button>
+									<button
+										disabled={busy}
+										title="Mark trusted by cross-signing (no emoji check)"
+										onClick={() => run(() => api.matrixVerifyDevice(d.device_id))}
+									>
+										Trust
+									</button>
+								</span>
 							)}
 						</div>
 					))}

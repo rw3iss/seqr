@@ -88,6 +88,15 @@ export interface MatrixVerificationStatus {
 	recovery_state: string
 }
 
+export interface MatrixEmoji {
+	symbol: string
+	description: string
+}
+
+export const VERIFICATION_EMOJIS_EVENT = "matrix://verification-emojis"
+export const VERIFICATION_DONE_EVENT = "matrix://verification-done"
+export const VERIFICATION_REQUEST_EVENT = "matrix://verification-request"
+
 export const MATRIX_MESSAGE_EVENT = "matrix://message"
 export const MATRIX_ROOM_UPDATED_EVENT = "matrix://room-updated"
 
@@ -185,6 +194,16 @@ export const api = {
 	/** Register a push token with the homeserver (called from the mobile push SDK). */
 	matrixRegisterPusher: (pushKey: string, appId: string): Promise<void> =>
 		invoke("matrix_register_pusher", { pushKey, appId }),
+	matrixRequestVerification: (deviceId: string): Promise<void> =>
+		invoke("matrix_request_verification", { deviceId }),
+	matrixConfirmVerification: (): Promise<void> => invoke("matrix_confirm_verification"),
+	matrixCancelVerification: (): Promise<void> => invoke("matrix_cancel_verification"),
+	onVerificationEmojis: (cb: (emojis: MatrixEmoji[]) => void): Promise<UnlistenFn> =>
+		listen<MatrixEmoji[]>(VERIFICATION_EMOJIS_EVENT, (e) => cb(e.payload)),
+	onVerificationDone: (cb: () => void): Promise<UnlistenFn> =>
+		listen(VERIFICATION_DONE_EVENT, () => cb()),
+	onVerificationRequest: (cb: (sender: string) => void): Promise<UnlistenFn> =>
+		listen<string>(VERIFICATION_REQUEST_EVENT, (e) => cb(e.payload)),
 	onMatrixMessage: (cb: (m: MatrixMessage) => void): Promise<UnlistenFn> =>
 		listen<MatrixMessage>(MATRIX_MESSAGE_EVENT, (e) => cb(e.payload)),
 

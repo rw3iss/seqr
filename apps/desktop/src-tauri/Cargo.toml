@@ -51,6 +51,8 @@ getrandom = "0.2"
 # MIME detection for Matrix media uploads.
 mime = "0.3"
 mime_guess = "2"
+# Stream combinators for driving the SAS verification state streams.
+futures-util = "0.3"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

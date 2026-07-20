@@ -5,17 +5,21 @@
 //! the UI as a `matrix://message` event (mirroring the P2P `seqr://message` shape so the
 //! chat UI can stay largely the same).
 
+use std::sync::Arc;
+
 use matrix_sdk::{
     config::SyncSettings,
     event_handler::Ctx,
     ruma::events::{
-        reaction::SyncReactionEvent, room::message::SyncRoomMessageEvent,
-        room::redaction::SyncRoomRedactionEvent,
+        key::verification::request::ToDeviceKeyVerificationRequestEvent, reaction::SyncReactionEvent,
+        room::message::SyncRoomMessageEvent, room::redaction::SyncRoomRedactionEvent,
     },
     Client, Room,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+
+use crate::matrix::MatrixState;
 
 pub const MATRIX_MESSAGE_EVENT: &str = "matrix://message";
 /// Emitted (with the room id) when a room's timeline changed in a way that needs a
@@ -48,9 +52,9 @@ pub struct MatrixMessage {
     pub reactions: Vec<MatrixReaction>,
 }
 
-/// Spawn the sync loop and register the live message handler. Idempotency is the caller's
-/// concern (guard with a flag so this runs once per login).
-pub fn start(client: Client, app: AppHandle) {
+/// Spawn the sync loop and register the live handlers. Idempotency is the caller's concern
+/// (guard with a flag so this runs once per login).
+pub fn start(client: Client, app: AppHandle, state: Arc<MatrixState>) {
     client.add_event_handler_context(app);
 
     let me = client.user_id().map(|u| u.to_owned());
@@ -84,6 +88,31 @@ pub fn start(client: Client, app: AppHandle) {
     client.add_event_handler(
         |_ev: SyncRoomRedactionEvent, room: Room, ctx: Ctx<AppHandle>| async move {
             let _ = ctx.emit(MATRIX_ROOM_UPDATED_EVENT, &room.room_id().to_string());
+        },
+    );
+
+    // Incoming device-verification requests (e.g. self-verifying a new login): auto-accept
+    // and drive to the emoji stage, surfacing them to the UI.
+    let vclient = client.clone();
+    client.add_event_handler(
+        move |ev: ToDeviceKeyVerificationRequestEvent, ctx: Ctx<AppHandle>| {
+            let vclient = vclient.clone();
+            let vstate = Arc::clone(&state);
+            async move {
+                let flow_id = ev.content.transaction_id;
+                if let Some(request) = vclient
+                    .encryption()
+                    .get_verification_request(&ev.sender, &flow_id)
+                    .await
+                {
+                    let _ = ctx.emit(
+                        crate::matrix::verification::VERIFICATION_REQUEST_EVENT,
+                        &ev.sender.to_string(),
+                    );
+                    let _ = request.accept().await;
+                    crate::matrix::verification::drive_request(request, ctx.0.clone(), vstate).await;
+                }
+            }
         },
     );
 
