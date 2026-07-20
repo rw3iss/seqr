@@ -69,15 +69,20 @@ app id `com.seqr.app.android`). It's exposed through the existing matrix vhost a
 (verified: malformed POST → `400` from Sygnal). Client command **`matrix_register_pusher`**
 is implemented (`api.matrixRegisterPusher(pushKey, appId)`).
 
-**✅ Android FCM client integrated (2026-07-20).** `google-services.json` (project `seqr-comm`,
-package `com.seqr.app.android`) lives in `gen/android/app/` (**gitignored** — supply per machine /
-CI secret). Gradle wired: `com.google.gms.google-services` plugin + `firebase-bom` +
-`firebase-messaging`. **App `applicationId` changed `com.seqr.app` → `com.seqr.app.android`** to
-match the Firebase registration + our pusher app id (⚠️ installs as a *new* package — uninstall the
-old `com.seqr.app` build). `MainActivity` fetches the FCM token → `filesDir/fcm_token`;
-`SeqrMessagingService` handles token refresh + incoming pushes; manifest has the FCM service +
-`POST_NOTIFICATIONS`. Rust `matrix_fcm_token` reads the file; the web app auto-calls
-`matrixRegisterPusher(token, "com.seqr.app.android")` after login (no-op on desktop). **Builds green.**
+**✅ Android FCM client integrated (2026-07-20).** Gradle wired: `com.google.gms.google-services`
+plugin + `firebase-bom` + `firebase-messaging`. `MainActivity` fetches the FCM token →
+`filesDir/fcm_token`; `SeqrMessagingService` handles token refresh + incoming pushes; manifest has
+the FCM service + `POST_NOTIFICATIONS`. Rust `matrix_fcm_token` reads the file; the web app
+auto-calls `matrixRegisterPusher(token, "com.seqr.app.android")` after login (no-op on desktop).
+
+**Identity (important):** the app is **`com.seqr.app`** everywhere — Tauri `identifier`, Kotlin
+`namespace`, and Gradle `applicationId` must all match (Tauri assumes this; a mismatch breaks
+`tauri android dev`'s launch). So the **Firebase Android app must be registered with package
+`com.seqr.app`**, and its `google-services.json` (project `seqr-comm`) goes in `gen/android/app/`
+(**gitignored** — supply per machine / CI secret). The Matrix/Sygnal **pusher app id stays
+`com.seqr.app.android`** — that's a Sygnal routing key, unrelated to the Android package. The build
+fails (`No matching client found for package name 'com.seqr.app'`) until the `com.seqr.app`
+`google-services.json` is present.
 
 **Remaining (on-device validation — can't be done off-device):** install on a phone, confirm the
 token is written + the pusher registers (`GET /_matrix/client/v3/pushers` should list it), then send a

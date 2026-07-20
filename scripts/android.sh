@@ -8,13 +8,13 @@
 #   scripts/android.sh --release       # release APK (needs a signing keystore configured)
 #   scripts/android.sh --dev           # live-reload dev (tauri android dev)
 #   scripts/android.sh --no-launch     # build + install, don't auto-launch
-#   scripts/android.sh --uninstall-old # also remove the legacy com.seqr.app package first
+#   scripts/android.sh --uninstall-old # also remove the stale com.seqr.app.android package first
 #
 # Env overrides: ANDROID_HOME, NDK_HOME, JAVA_HOME (auto-detected if unset).
 set -euo pipefail
 
-APP_ID="com.seqr.app.android"
-LEGACY_APP_ID="com.seqr.app"        # pre-FCM applicationId (installs separately)
+APP_ID="com.seqr.app"
+LEGACY_APP_ID="com.seqr.app.android"   # short-lived FCM-era applicationId (installs separately)
 TARGET="aarch64"
 PROFILE="--debug"
 MODE="build"                        # build | dev

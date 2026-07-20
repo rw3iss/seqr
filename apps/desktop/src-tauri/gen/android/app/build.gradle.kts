@@ -19,9 +19,10 @@ android {
     namespace = "com.seqr.app"
     defaultConfig {
         manifestPlaceholders["usesCleartextTraffic"] = "false"
-        // Matches the Firebase-registered package in google-services.json (and our
-        // Sygnal/Matrix pusher app id). namespace stays com.seqr.app (Kotlin package).
-        applicationId = "com.seqr.app.android"
+        // Must equal the Tauri identifier + Kotlin namespace (tauri assumes they match) and
+        // the Firebase-registered package in google-services.json. The Matrix/Sygnal pusher
+        // app id ("com.seqr.app.android") is a separate routing key and is unaffected.
+        applicationId = "com.seqr.app"
         minSdk = 24
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
