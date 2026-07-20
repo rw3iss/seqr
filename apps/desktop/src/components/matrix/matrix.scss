@@ -29,9 +29,38 @@
 	font-size: 12px;
 }
 
+.mx-new {
+	padding: $space-3 $space-4;
+	border-bottom: 1px solid $border;
+	display: flex;
+	flex-direction: column;
+	gap: $space-2;
+
+	input { width: 100%; }
+
+	.mx-new-actions {
+		display: flex;
+		gap: $space-2;
+
+		button { flex: 1; font-size: 12px; }
+	}
+}
+
 .mx-rooms {
 	flex: 1;
 	overflow-y: auto;
+}
+
+.mx-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: $space-3 $space-4;
+	border-bottom: 1px solid $border;
+	background: $bg-panel;
+
+	.mx-room-name { color: $text; }
+	.mx-leave { font-size: 12px; }
 }
 
 .mx-room {
@@ -92,6 +121,26 @@
 		color: $text-muted;
 		margin-bottom: 2px;
 	}
+
+	.mx-msg-image {
+		max-width: 260px;
+		max-height: 260px;
+		border-radius: $radius-sm;
+		display: block;
+	}
+
+	.mx-msg-file {
+		background: transparent;
+		border: none;
+		color: inherit;
+		padding: 0;
+		cursor: pointer;
+		text-decoration: underline;
+	}
+}
+
+.mx-composer .mx-attach {
+	padding: $space-2;
 }
 
 .mx-composer {

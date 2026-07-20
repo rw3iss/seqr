@@ -216,10 +216,12 @@ pub async fn matrix_room_messages(
             continue;
         }
         let content = &v["content"];
-        if content.get("msgtype").and_then(|m| m.as_str()) != Some("m.text") {
-            continue;
-        }
         let Some(body) = content.get("body").and_then(|b| b.as_str()) else { continue };
+        let msgtype = content
+            .get("msgtype")
+            .and_then(|m| m.as_str())
+            .unwrap_or("m.text")
+            .to_string();
         let sender = v.get("sender").and_then(|s| s.as_str()).unwrap_or("").to_string();
         out.push(MatrixMessage {
             room_id: room_id.clone(),
@@ -227,9 +229,241 @@ pub async fn matrix_room_messages(
             outgoing: me.as_deref() == Some(sender.as_str()),
             sender,
             body: body.to_string(),
+            msgtype,
             ts: v.get("origin_server_ts").and_then(|t| t.as_u64()).unwrap_or(0),
         });
     }
     out.reverse(); // backward() yields newest-first; the UI wants oldest-first
     Ok(out)
+}
+
+// ---------------------------------------------------------------------------
+// M3 — rooms, DMs, membership, media
+// ---------------------------------------------------------------------------
+
+/// Create (or reuse) an encrypted 1:1 DM with a user. Returns the room id.
+#[tauri::command]
+pub async fn matrix_create_dm(user_id: String, state: MxState<'_>) -> Result<String, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let uid = matrix_sdk::ruma::UserId::parse(&user_id).map_err(|e| e.to_string())?;
+    let room = client.create_dm(&uid).await.map_err(|e| e.to_string())?;
+    Ok(room.room_id().to_string())
+}
+
+/// Create an encrypted group room with an optional name and invitees. Returns the room id.
+#[tauri::command]
+pub async fn matrix_create_room(
+    name: String,
+    invite: Vec<String>,
+    state: MxState<'_>,
+) -> Result<String, String> {
+    use matrix_sdk::ruma::api::client::room::create_room::v3::Request as CreateRoom;
+    use matrix_sdk::ruma::events::AnyInitialStateEvent;
+    use matrix_sdk::ruma::serde::Raw;
+
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+
+    let mut req = CreateRoom::new();
+    if !name.trim().is_empty() {
+        req.name = Some(name);
+    }
+    let mut invites = Vec::new();
+    for u in &invite {
+        invites.push(matrix_sdk::ruma::UserId::parse(u).map_err(|e| e.to_string())?);
+    }
+    req.invite = invites;
+
+    // Turn on Megolm encryption from room creation (built as raw state to avoid the SDK's
+    // evolving typed-event constructors).
+    let enc: Raw<AnyInitialStateEvent> = serde_json::from_value(serde_json::json!({
+        "type": "m.room.encryption",
+        "state_key": "",
+        "content": { "algorithm": "m.megolm.v1.aes-sha2" }
+    }))
+    .map_err(|e| e.to_string())?;
+    req.initial_state = vec![enc];
+
+    let room = client.create_room(req).await.map_err(|e| e.to_string())?;
+    Ok(room.room_id().to_string())
+}
+
+/// Invite a user to a room.
+#[tauri::command]
+pub async fn matrix_invite(
+    room_id: String,
+    user_id: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    let uid = matrix_sdk::ruma::UserId::parse(&user_id).map_err(|e| e.to_string())?;
+    room.invite_user_by_id(&uid).await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Join a room by id or alias. Returns the joined room id.
+#[tauri::command]
+pub async fn matrix_join(room: String, state: MxState<'_>) -> Result<String, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let id = matrix_sdk::ruma::RoomOrAliasId::parse(&room).map_err(|e| e.to_string())?;
+    let joined = client
+        .join_room_by_id_or_alias(&id, &[])
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(joined.room_id().to_string())
+}
+
+/// Leave a room.
+#[tauri::command]
+pub async fn matrix_leave(room_id: String, state: MxState<'_>) -> Result<(), String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    room.leave().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// A joined member of a room.
+#[derive(Serialize)]
+pub struct MatrixMember {
+    pub user_id: String,
+    pub display_name: Option<String>,
+}
+
+/// List the joined members of a room.
+#[tauri::command]
+pub async fn matrix_room_members(
+    room_id: String,
+    state: MxState<'_>,
+) -> Result<Vec<MatrixMember>, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    let members = room
+        .members(matrix_sdk::RoomMemberships::JOIN)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(members
+        .into_iter()
+        .map(|m| MatrixMember {
+            user_id: m.user_id().to_string(),
+            display_name: m.display_name().map(String::from),
+        })
+        .collect())
+}
+
+/// Upload a file (encrypted for encrypted rooms) and post it as a message.
+#[tauri::command]
+pub async fn matrix_send_file(
+    room_id: String,
+    path: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    use matrix_sdk::attachment::AttachmentConfig;
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+
+    let data = std::fs::read(&path).map_err(|e| e.to_string())?;
+    let filename = std::path::Path::new(&path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or("file")
+        .to_string();
+    let mime = mime_guess::from_path(&path).first_or_octet_stream();
+
+    room.send_attachment(&filename, &mime, data, AttachmentConfig::new())
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Fetch + decrypt the media bytes of a media message event.
+async fn media_bytes(
+    client: &Client,
+    room: &matrix_sdk::Room,
+    event_id: &str,
+) -> Result<(Vec<u8>, String), String> {
+    use matrix_sdk::ruma::events::room::message::MessageType;
+    use matrix_sdk::ruma::events::{
+        AnySyncMessageLikeEvent, AnySyncTimelineEvent, SyncMessageLikeEvent,
+    };
+
+    let eid = matrix_sdk::ruma::EventId::parse(event_id).map_err(|e| e.to_string())?;
+    let ev = room.event(&eid, None).await.map_err(|e| e.to_string())?;
+    let parsed: AnySyncTimelineEvent = ev.raw().deserialize().map_err(|e| e.to_string())?;
+    let AnySyncTimelineEvent::MessageLike(AnySyncMessageLikeEvent::RoomMessage(
+        SyncMessageLikeEvent::Original(m),
+    )) = parsed
+    else {
+        return Err("not a message event".into());
+    };
+
+    let media = client.media();
+    let (bytes, mime) = match m.content.msgtype {
+        MessageType::Image(c) => {
+            let mime = c.info.as_ref().and_then(|i| i.mimetype.clone());
+            (media.get_file(&c, true).await, mime)
+        }
+        MessageType::File(c) => {
+            let mime = c.info.as_ref().and_then(|i| i.mimetype.clone());
+            (media.get_file(&c, true).await, mime)
+        }
+        MessageType::Video(c) => {
+            let mime = c.info.as_ref().and_then(|i| i.mimetype.clone());
+            (media.get_file(&c, true).await, mime)
+        }
+        MessageType::Audio(c) => {
+            let mime = c.info.as_ref().and_then(|i| i.mimetype.clone());
+            (media.get_file(&c, true).await, mime)
+        }
+        _ => return Err("not a media message".into()),
+    };
+    let bytes = bytes.map_err(|e| e.to_string())?.ok_or("no media content")?;
+    Ok((bytes, mime.unwrap_or_else(|| "application/octet-stream".into())))
+}
+
+/// Read a media message as a `data:` URL (for inline image preview). Capped at 16 MB.
+#[tauri::command]
+pub async fn matrix_read_media(
+    room_id: String,
+    event_id: String,
+    state: MxState<'_>,
+) -> Result<String, String> {
+    use base64::Engine;
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    let (bytes, mime) = media_bytes(client, &room, &event_id).await?;
+    if bytes.len() > 16 * 1024 * 1024 {
+        return Err("media too large to preview".into());
+    }
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
+    Ok(format!("data:{};base64,{}", mime, b64))
+}
+
+/// Decrypt + save a media message to a chosen path.
+#[tauri::command]
+pub async fn matrix_save_media(
+    room_id: String,
+    event_id: String,
+    dest: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    let (bytes, _mime) = media_bytes(client, &room, &event_id).await?;
+    std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
+    Ok(())
 }

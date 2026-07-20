@@ -1,9 +1,10 @@
-// Matrix chat: room list on the left, the selected room's timeline + composer on the
-// right. History loads on room switch; live messages arrive via the `matrix://message`
-// event emitted by the background sync loop.
+// Matrix chat: room list + create controls on the left; the selected room's timeline
+// (text + media bubbles) and composer (with file attach) on the right. History loads on
+// room switch; live messages arrive via the `matrix://message` sync event.
 
 import { useEffect, useRef, useState } from "preact/hooks"
 import type { UnlistenFn } from "@tauri-apps/api/event"
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog"
 import { api, errMessage, type MatrixMessage, type MatrixRoom, type MatrixStatus } from "../../lib/api"
 import "./matrix.scss"
 
@@ -17,29 +18,28 @@ export function MatrixChat({ status, onLogout }: Props) {
 	const [active, setActive] = useState<string | null>(null)
 	const [messages, setMessages] = useState<MatrixMessage[]>([])
 	const [draft, setDraft] = useState("")
+	const [newVal, setNewVal] = useState("")
 	const [error, setError] = useState("")
 
-	// `active` captured for the (long-lived) event listener.
 	const activeRef = useRef<string | null>(null)
 	activeRef.current = active
 	const bottomRef = useRef<HTMLDivElement>(null)
 
-	function loadRooms() {
+	function loadRooms(select?: string) {
 		api.matrixRooms()
 			.then((r) => {
 				setRooms(r)
-				setActive((cur) => cur ?? (r[0]?.id ?? null))
+				setActive((cur) => select ?? cur ?? r[0]?.id ?? null)
 			})
 			.catch(() => {})
 	}
 
 	useEffect(() => {
 		loadRooms()
-		const id = setInterval(loadRooms, 10_000)
+		const id = setInterval(() => loadRooms(), 10_000)
 		return () => clearInterval(id)
 	}, [])
 
-	// Live inbound/echo messages for the open room, de-duplicated by event id.
 	useEffect(() => {
 		let un: UnlistenFn | undefined
 		api.onMatrixMessage((m) => {
@@ -51,7 +51,6 @@ export function MatrixChat({ status, onLogout }: Props) {
 		return () => un?.()
 	}, [])
 
-	// Load history when switching rooms.
 	useEffect(() => {
 		if (!active) {
 			setMessages([])
@@ -77,6 +76,41 @@ export function MatrixChat({ status, onLogout }: Props) {
 		}
 	}
 
+	async function startDm() {
+		const id = newVal.trim()
+		if (!id) return
+		setNewVal("")
+		try {
+			const roomId = await api.matrixCreateDm(id)
+			loadRooms(roomId)
+		} catch (err) {
+			setError(errMessage(err))
+		}
+	}
+
+	async function createRoom() {
+		const name = newVal.trim()
+		if (!name) return
+		setNewVal("")
+		try {
+			const roomId = await api.matrixCreateRoom(name, [])
+			loadRooms(roomId)
+		} catch (err) {
+			setError(errMessage(err))
+		}
+	}
+
+	async function attach() {
+		if (!active) return
+		const picked = await openDialog({ multiple: false })
+		if (typeof picked !== "string") return
+		try {
+			await api.matrixSendFile(active, picked)
+		} catch (err) {
+			setError(errMessage(err))
+		}
+	}
+
 	const activeRoom = rooms.find((r) => r.id === active)
 
 	return (
@@ -86,6 +120,19 @@ export function MatrixChat({ status, onLogout }: Props) {
 					<div class="mx-me-id">{status.user_id}</div>
 					<button class="mx-logout" onClick={onLogout}>Sign out</button>
 				</div>
+
+				<div class="mx-new">
+					<input
+						value={newVal}
+						placeholder="@user:server or room name"
+						onInput={(e) => setNewVal(e.currentTarget.value)}
+					/>
+					<div class="mx-new-actions">
+						<button onClick={startDm} disabled={!newVal.trim()}>Start DM</button>
+						<button onClick={createRoom} disabled={!newVal.trim()}>New room</button>
+					</div>
+				</div>
+
 				<div class="mx-rooms">
 					{rooms.length === 0 && <div class="mx-room-kind" style="padding:12px">No rooms yet.</div>}
 					{rooms.map((r) => (
@@ -103,20 +150,38 @@ export function MatrixChat({ status, onLogout }: Props) {
 
 			<main class="mx-main">
 				{!activeRoom ? (
-					<div class="mx-empty">Select a room to start chatting.</div>
+					<div class="mx-empty">Select or start a conversation.</div>
 				) : (
 					<>
+						<header class="mx-header">
+							<span class="mx-room-name">{activeRoom.name}</span>
+							<button
+								class="mx-leave"
+								onClick={async () => {
+									if (!active) return
+									await api.matrixLeave(active).catch(() => {})
+									setActive(null)
+									loadRooms()
+								}}
+							>
+								Leave
+							</button>
+						</header>
+
 						<div class="mx-messages">
 							{messages.map((m) => (
 								<div key={m.event_id ?? m.ts} class={`mx-msg${m.outgoing ? " out" : ""}`}>
 									{!m.outgoing && <div class="mx-msg-sender">{m.sender}</div>}
-									<div class="mx-msg-body">{m.body}</div>
+									<MessageBody roomId={activeRoom.id} msg={m} onError={setError} />
 								</div>
 							))}
 							<div ref={bottomRef} />
 						</div>
+
 						{error && <p class="error-text" style="padding:0 12px">{error}</p>}
+
 						<form class="mx-composer" onSubmit={send}>
+							<button type="button" class="mx-attach" onClick={attach} title="Attach a file">📎</button>
 							<input
 								value={draft}
 								placeholder={`Message ${activeRoom.name}`}
@@ -128,5 +193,53 @@ export function MatrixChat({ status, onLogout }: Props) {
 				)}
 			</main>
 		</div>
+	)
+}
+
+// Renders a single message body: text inline, images lazily fetched + decrypted, other
+// media as a download chip.
+function MessageBody({
+	roomId,
+	msg,
+	onError,
+}: {
+	roomId: string
+	msg: MatrixMessage
+	onError: (e: string) => void
+}) {
+	const [imgUrl, setImgUrl] = useState<string | null>(null)
+
+	useEffect(() => {
+		if (msg.msgtype === "m.image" && msg.event_id) {
+			api.matrixReadMedia(roomId, msg.event_id).then(setImgUrl).catch(() => setImgUrl(null))
+		}
+	}, [msg.event_id, msg.msgtype])
+
+	if (msg.msgtype === "m.text") return <div class="mx-msg-body">{msg.body}</div>
+
+	if (msg.msgtype === "m.image") {
+		return imgUrl ? (
+			<img class="mx-msg-image" src={imgUrl} alt={msg.body} />
+		) : (
+			<div class="mx-msg-body">🖼️ {msg.body}</div>
+		)
+	}
+
+	// Other media → download chip.
+	async function download() {
+		if (!msg.event_id) return
+		const dest = await saveDialog({ defaultPath: msg.body })
+		if (typeof dest !== "string") return
+		try {
+			await api.matrixSaveMedia(roomId, msg.event_id, dest)
+		} catch (err) {
+			onError(errMessage(err))
+		}
+	}
+
+	return (
+		<button class="mx-msg-file" onClick={download} title="Download">
+			📎 {msg.body}
+		</button>
 	)
 }

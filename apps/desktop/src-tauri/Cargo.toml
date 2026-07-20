@@ -48,6 +48,9 @@ tokio = { version = "1", features = ["time"] }
 matrix-sdk = { version = "0.18", features = ["bundled-sqlite", "markdown"] }
 # Random passphrase for the Matrix store encryption (single-version, already in the tree).
 getrandom = "0.2"
+# MIME detection for Matrix media uploads.
+mime = "0.3"
+mime_guess = "2"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

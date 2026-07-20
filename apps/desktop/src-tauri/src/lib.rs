@@ -95,6 +95,15 @@ pub fn run() {
             matrix::commands::matrix_rooms,
             matrix::commands::matrix_send_message,
             matrix::commands::matrix_room_messages,
+            matrix::commands::matrix_create_dm,
+            matrix::commands::matrix_create_room,
+            matrix::commands::matrix_invite,
+            matrix::commands::matrix_join,
+            matrix::commands::matrix_leave,
+            matrix::commands::matrix_room_members,
+            matrix::commands::matrix_send_file,
+            matrix::commands::matrix_read_media,
+            matrix::commands::matrix_save_media,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

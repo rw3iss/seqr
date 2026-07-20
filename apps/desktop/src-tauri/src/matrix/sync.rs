@@ -8,7 +8,7 @@
 use matrix_sdk::{
     config::SyncSettings,
     event_handler::Ctx,
-    ruma::events::room::message::{MessageType, SyncRoomMessageEvent},
+    ruma::events::room::message::SyncRoomMessageEvent,
     Client, Room,
 };
 use serde::Serialize;
@@ -16,13 +16,16 @@ use tauri::{AppHandle, Emitter};
 
 pub const MATRIX_MESSAGE_EVENT: &str = "matrix://message";
 
-/// A decrypted text message, flattened for the UI.
+/// A decrypted message, flattened for the UI. For media (`m.image`/`m.file`/…) `body` is
+/// the filename/caption; the UI fetches the bytes on demand via `matrix_read_media`.
 #[derive(Serialize, Clone)]
 pub struct MatrixMessage {
     pub room_id: String,
     pub event_id: Option<String>,
     pub sender: String,
     pub body: String,
+    /// `m.text` | `m.image` | `m.file` | `m.video` | `m.audio` | …
+    pub msgtype: String,
     /// Milliseconds since the Unix epoch (origin_server_ts).
     pub ts: u64,
     pub outgoing: bool,
@@ -39,12 +42,12 @@ pub fn start(client: Client, app: AppHandle) {
             let me = me.clone();
             async move {
                 let Some(orig) = ev.as_original() else { return };
-                let MessageType::Text(text) = &orig.content.msgtype else { return };
                 let msg = MatrixMessage {
                     room_id: room.room_id().to_string(),
                     event_id: Some(orig.event_id.to_string()),
                     sender: orig.sender.to_string(),
-                    body: text.body.clone(),
+                    body: orig.content.body().to_string(),
+                    msgtype: orig.content.msgtype.msgtype().to_string(),
                     ts: u64::from(orig.origin_server_ts.get()),
                     outgoing: me.as_deref() == Some(orig.sender.as_ref()),
                 };

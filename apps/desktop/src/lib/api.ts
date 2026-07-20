@@ -57,8 +57,15 @@ export interface MatrixMessage {
 	event_id: string | null
 	sender: string
 	body: string
+	/** "m.text" | "m.image" | "m.file" | "m.video" | "m.audio" | … */
+	msgtype: string
 	ts: number
 	outgoing: boolean
+}
+
+export interface MatrixMember {
+	user_id: string
+	display_name: string | null
 }
 
 export const MATRIX_MESSAGE_EVENT = "matrix://message"
@@ -120,6 +127,21 @@ export const api = {
 		invoke("matrix_room_messages", { roomId }),
 	matrixSendMessage: (roomId: string, body: string): Promise<void> =>
 		invoke("matrix_send_message", { roomId, body }),
+	matrixCreateDm: (userId: string): Promise<string> => invoke("matrix_create_dm", { userId }),
+	matrixCreateRoom: (name: string, invite: string[]): Promise<string> =>
+		invoke("matrix_create_room", { name, invite }),
+	matrixInvite: (roomId: string, userId: string): Promise<void> =>
+		invoke("matrix_invite", { roomId, userId }),
+	matrixJoin: (room: string): Promise<string> => invoke("matrix_join", { room }),
+	matrixLeave: (roomId: string): Promise<void> => invoke("matrix_leave", { roomId }),
+	matrixRoomMembers: (roomId: string): Promise<MatrixMember[]> =>
+		invoke("matrix_room_members", { roomId }),
+	matrixSendFile: (roomId: string, path: string): Promise<void> =>
+		invoke("matrix_send_file", { roomId, path }),
+	matrixReadMedia: (roomId: string, eventId: string): Promise<string> =>
+		invoke("matrix_read_media", { roomId, eventId }),
+	matrixSaveMedia: (roomId: string, eventId: string, dest: string): Promise<void> =>
+		invoke("matrix_save_media", { roomId, eventId, dest }),
 	onMatrixMessage: (cb: (m: MatrixMessage) => void): Promise<UnlistenFn> =>
 		listen<MatrixMessage>(MATRIX_MESSAGE_EVENT, (e) => cb(e.payload)),
 
