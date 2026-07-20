@@ -59,3 +59,14 @@
 	text-align: center;
 	line-height: 1.5;
 }
+
+.login-toggle {
+	background: transparent;
+	border: none;
+	color: $accent;
+	font-size: 12px;
+	padding: 0;
+	cursor: pointer;
+
+	&:hover { text-decoration: underline; }
+}

@@ -89,6 +89,7 @@ pub fn run() {
             // Matrix backend (default).
             matrix::commands::matrix_status,
             matrix::commands::matrix_login,
+            matrix::commands::matrix_register,
             matrix::commands::matrix_restore_session,
             matrix::commands::matrix_logout,
             matrix::commands::matrix_start_sync,

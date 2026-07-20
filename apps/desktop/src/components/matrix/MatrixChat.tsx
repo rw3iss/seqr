@@ -179,6 +179,7 @@ export function MatrixChat({ status, onLogout }: Props) {
 								<div key={m.event_id ?? m.ts} class={`mx-msg${m.outgoing ? " out" : ""}`}>
 									{!m.outgoing && <div class="mx-msg-sender">{m.sender}</div>}
 									<MessageBody roomId={activeRoom.id} msg={m} onError={setError} />
+									{m.ts > 0 && <div class="mx-msg-time">{formatTime(m.ts)}</div>}
 								</div>
 							))}
 							<div ref={bottomRef} />
@@ -202,6 +203,11 @@ export function MatrixChat({ status, onLogout }: Props) {
 			{showSecurity && <MatrixSecurity onClose={() => setShowSecurity(false)} />}
 		</div>
 	)
+}
+
+// Local-time HH:MM for a millisecond timestamp.
+function formatTime(ts: number): string {
+	return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
 // Renders a single message body: text inline, images lazily fetched + decrypted, other

@@ -13,3 +13,5 @@ Cargo.lock.bak
 node_modules/
 dist/
 .vite/
+
+_info.md

@@ -169,6 +169,15 @@
 		cursor: pointer;
 		text-decoration: underline;
 	}
+
+	.mx-msg-time {
+		font-size: 10px;
+		color: $text-muted;
+		margin-top: 2px;
+		text-align: right;
+	}
+
+	&.out .mx-msg-time { color: rgba(255, 255, 255, 0.75); }
 }
 
 .mx-composer .mx-attach {

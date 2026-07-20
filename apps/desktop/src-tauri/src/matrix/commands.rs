@@ -188,10 +188,71 @@ pub async fn matrix_send_message(
     let client = guard.as_ref().ok_or("not logged in")?;
     let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
     let room = client.get_room(&rid).ok_or("unknown room")?;
-    room.send(RoomMessageEventContent::text_plain(body))
+    // Markdown → formatted (HTML) body, with a plain-text fallback.
+    room.send(RoomMessageEventContent::text_markdown(body))
         .await
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+/// Register a new account with a registration token, then stay logged in (fresh store).
+#[tauri::command]
+pub async fn matrix_register(
+    username: String,
+    password: String,
+    token: String,
+    state: MxState<'_>,
+) -> Result<MatrixStatus, String> {
+    use matrix_sdk::ruma::api::client::account::register::v3::Request as RegRequest;
+    use matrix_sdk::ruma::api::client::uiaa;
+
+    let db_path = state.store_dir();
+    let _ = std::fs::remove_dir_all(&db_path);
+    std::fs::create_dir_all(&db_path).map_err(|e| e.to_string())?;
+    let passphrase = new_passphrase();
+    let client = build_client(&state.homeserver_url, &db_path, &passphrase)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let auth = client.matrix_auth();
+    let mut req = RegRequest::new();
+    req.username = Some(username);
+    req.password = Some(password);
+
+    // First call returns a UIAA challenge carrying the session id; answer it with the
+    // registration token and call again.
+    match auth.register(req.clone()).await {
+        Ok(_) => {}
+        Err(e) => {
+            let info = e
+                .as_uiaa_response()
+                .ok_or_else(|| e.to_string())?
+                .clone();
+            let mut tok = uiaa::RegistrationToken::new(token);
+            tok.session = info.session.clone();
+            req.auth = Some(uiaa::AuthData::RegistrationToken(tok));
+            auth.register(req).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    let user_session = auth
+        .session()
+        .ok_or_else(|| "no session after registration".to_string())?;
+    let full = FullSession {
+        client_session: ClientSession {
+            homeserver: state.homeserver_url.clone(),
+            db_path,
+            passphrase,
+        },
+        user_session,
+        sync_token: None,
+    };
+    let json = serde_json::to_string(&full).map_err(|e| e.to_string())?;
+    std::fs::write(state.session_file(), json).map_err(|e| e.to_string())?;
+
+    let status = status_of(Some(&client), &state.homeserver_url);
+    *state.client.write().await = Some(client);
+    Ok(status)
 }
 
 /// Recent text history for a room (oldest-first), parsed from raw events so we don't

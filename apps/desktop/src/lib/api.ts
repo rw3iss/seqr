@@ -133,6 +133,8 @@ export const api = {
 	matrixRestoreSession: (): Promise<MatrixStatus> => invoke("matrix_restore_session"),
 	matrixLogin: (username: string, password: string): Promise<MatrixStatus> =>
 		invoke("matrix_login", { username, password }),
+	matrixRegister: (username: string, password: string, token: string): Promise<MatrixStatus> =>
+		invoke("matrix_register", { username, password, token }),
 	matrixLogout: (): Promise<void> => invoke("matrix_logout"),
 	matrixStartSync: (): Promise<void> => invoke("matrix_start_sync"),
 	matrixRooms: (): Promise<MatrixRoom[]> => invoke("matrix_rooms"),
