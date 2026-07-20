@@ -1,8 +1,11 @@
 package com.seqr.app
 
 import android.os.Bundle
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.enableEdgeToEdge
+import com.google.firebase.messaging.FirebaseMessaging
+import java.io.File
 
 class MainActivity : TauriActivity() {
   override fun onCreate(savedInstanceState: Bundle?) {
@@ -15,5 +18,20 @@ class MainActivity : TauriActivity() {
       WindowManager.LayoutParams.FLAG_SECURE,
     )
     super.onCreate(savedInstanceState)
+
+    // Fetch the FCM registration token and stash it in the app's files dir, where the Rust
+    // core reads it (matrix_fcm_token) and registers a Matrix pusher after login.
+    FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+      if (task.isSuccessful) {
+        try {
+          File(filesDir, "fcm_token").writeText(task.result)
+          Log.i("Seqr", "FCM token stored in " + filesDir.absolutePath)
+        } catch (e: Exception) {
+          Log.w("Seqr", "failed to store FCM token", e)
+        }
+      } else {
+        Log.w("Seqr", "FCM token fetch failed", task.exception)
+      }
+    }
   }
 }

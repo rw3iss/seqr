@@ -26,7 +26,15 @@ export function MatrixApp() {
 	}, [])
 
 	useEffect(() => {
-		if (status?.logged_in) api.matrixStartSync().catch(() => {})
+		if (!status?.logged_in) return
+		api.matrixStartSync().catch(() => {})
+		// On mobile, register the FCM pusher so the homeserver can wake us for new messages.
+		// On desktop there's no token → no-op.
+		api.matrixFcmToken()
+			.then((token) => {
+				if (token) return api.matrixRegisterPusher(token, "com.seqr.app.android")
+			})
+			.catch(() => {})
 	}, [status?.logged_in])
 
 	if (loading) return null

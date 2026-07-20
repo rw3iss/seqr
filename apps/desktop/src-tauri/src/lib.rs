@@ -117,6 +117,7 @@ pub fn run() {
             matrix::commands::matrix_confirm_verification,
             matrix::commands::matrix_cancel_verification,
             matrix::commands::matrix_register_pusher,
+            matrix::commands::matrix_fcm_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -64,11 +64,22 @@ app id `com.seqr.app.android`). It's exposed through the existing matrix vhost a
 (verified: malformed POST → `400` from Sygnal). Client command **`matrix_register_pusher`**
 is implemented (`api.matrixRegisterPusher(pushKey, appId)`).
 
-**Remaining (gated on the Android build):** obtain the **FCM registration token** on-device
-(needs the Firebase Android client config `google-services.json` + the FCM SDK wired into the
-`gen/android` project from M5), then call `matrixRegisterPusher(token, "com.seqr.app.android")`
-after login. **iOS/APNs:** add a `com.seqr.app.ios` app block to `/etc/sygnal/sygnal.yaml`
-with your `.p8` key (needs the Apple push key from M7).
+**✅ Android FCM client integrated (2026-07-20).** `google-services.json` (project `seqr-comm`,
+package `com.seqr.app.android`) lives in `gen/android/app/` (**gitignored** — supply per machine /
+CI secret). Gradle wired: `com.google.gms.google-services` plugin + `firebase-bom` +
+`firebase-messaging`. **App `applicationId` changed `com.seqr.app` → `com.seqr.app.android`** to
+match the Firebase registration + our pusher app id (⚠️ installs as a *new* package — uninstall the
+old `com.seqr.app` build). `MainActivity` fetches the FCM token → `filesDir/fcm_token`;
+`SeqrMessagingService` handles token refresh + incoming pushes; manifest has the FCM service +
+`POST_NOTIFICATIONS`. Rust `matrix_fcm_token` reads the file; the web app auto-calls
+`matrixRegisterPusher(token, "com.seqr.app.android")` after login (no-op on desktop). **Builds green.**
+
+**Remaining (on-device validation — can't be done off-device):** install on a phone, confirm the
+token is written + the pusher registers (`GET /_matrix/client/v3/pushers` should list it), then send a
+message from another account with the app backgrounded and confirm FCM delivery. A **foreground sync
+service + system notification** on `onMessageReceived` is the follow-up for true background delivery
+(right now delivery works while the process is alive). **iOS/APNs:** add a `com.seqr.app.ios` app
+block to `/etc/sygnal/sygnal.yaml` with your `.p8` key (needs the Apple push key from M7).
 
 **Why a gateway:** Matrix push goes homeserver → **Sygnal** (push gateway) → FCM (Android) /
 APNs (iOS). Continuwuity emits the push; Sygnal holds your FCM/APNs secrets and forwards.

@@ -194,6 +194,8 @@ export const api = {
 	/** Register a push token with the homeserver (called from the mobile push SDK). */
 	matrixRegisterPusher: (pushKey: string, appId: string): Promise<void> =>
 		invoke("matrix_register_pusher", { pushKey, appId }),
+	/** FCM token stashed by the Android layer; null on desktop. */
+	matrixFcmToken: (): Promise<string | null> => invoke("matrix_fcm_token"),
 	matrixRequestVerification: (deviceId: string): Promise<void> =>
 		invoke("matrix_request_verification", { deviceId }),
 	matrixConfirmVerification: (): Promise<void> => invoke("matrix_confirm_verification"),

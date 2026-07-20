@@ -814,6 +814,24 @@ pub async fn matrix_register_pusher(
     Ok(())
 }
 
+/// Read the FCM registration token stashed by the Android layer (`filesDir/fcm_token`).
+/// Returns `None` on desktop (no such file), so the caller simply skips pusher registration.
+#[tauri::command]
+pub async fn matrix_fcm_token(state: MxState<'_>) -> Result<Option<String>, String> {
+    for p in [
+        state.data_dir.join("fcm_token"),
+        state.data_dir.join("files").join("fcm_token"),
+    ] {
+        if let Ok(s) = std::fs::read_to_string(&p) {
+            let t = s.trim().to_string();
+            if !t.is_empty() {
+                return Ok(Some(t));
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// Snapshot of the account's crypto trust/backup posture.
 #[derive(Serialize)]
 pub struct MatrixVerificationStatus {

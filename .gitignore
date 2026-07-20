@@ -15,3 +15,6 @@ dist/
 .vite/
 
 _info.md
+# Firebase Android config (secret-ish; per-machine)
+google-services.json
+**/google-services.json
