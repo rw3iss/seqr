@@ -68,6 +68,19 @@ export interface MatrixMember {
 	display_name: string | null
 }
 
+export interface MatrixDevice {
+	device_id: string
+	display_name: string | null
+	verified: boolean
+	is_current: boolean
+}
+
+export interface MatrixVerificationStatus {
+	cross_signing_ready: boolean
+	this_device_verified: boolean
+	recovery_state: string
+}
+
 export const MATRIX_MESSAGE_EVENT = "matrix://message"
 
 export interface AttachmentInfo {
@@ -142,6 +155,15 @@ export const api = {
 		invoke("matrix_read_media", { roomId, eventId }),
 	matrixSaveMedia: (roomId: string, eventId: string, dest: string): Promise<void> =>
 		invoke("matrix_save_media", { roomId, eventId, dest }),
+	matrixDevices: (): Promise<MatrixDevice[]> => invoke("matrix_devices"),
+	matrixVerifyDevice: (deviceId: string): Promise<void> =>
+		invoke("matrix_verify_device", { deviceId }),
+	matrixRecoveryEnable: (passphrase: string): Promise<string> =>
+		invoke("matrix_recovery_enable", { passphrase }),
+	matrixRecover: (recoveryKey: string): Promise<void> =>
+		invoke("matrix_recover", { recoveryKey }),
+	matrixVerificationStatus: (): Promise<MatrixVerificationStatus> =>
+		invoke("matrix_verification_status"),
 	onMatrixMessage: (cb: (m: MatrixMessage) => void): Promise<UnlistenFn> =>
 		listen<MatrixMessage>(MATRIX_MESSAGE_EVENT, (e) => cb(e.payload)),
 

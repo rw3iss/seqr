@@ -467,3 +467,127 @@ pub async fn matrix_save_media(
     std::fs::write(&dest, bytes).map_err(|e| e.to_string())?;
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// M4 — trust & recovery (cross-signing, device verification, key backup)
+// ---------------------------------------------------------------------------
+
+/// One of the user's own devices.
+#[derive(Serialize)]
+pub struct MatrixDevice {
+    pub device_id: String,
+    pub display_name: Option<String>,
+    pub verified: bool,
+    pub is_current: bool,
+}
+
+/// List the current user's devices with their verification state.
+#[tauri::command]
+pub async fn matrix_devices(state: MxState<'_>) -> Result<Vec<MatrixDevice>, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let user = client.user_id().ok_or("not logged in")?;
+    let current = client.device_id().map(|d| d.to_string());
+
+    let devices = client
+        .encryption()
+        .get_user_devices(user)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for d in devices.devices() {
+        let id = d.device_id().to_string();
+        out.push(MatrixDevice {
+            display_name: d.display_name().map(String::from),
+            verified: d.is_verified(),
+            is_current: current.as_deref() == Some(id.as_str()),
+            device_id: id,
+        });
+    }
+    Ok(out)
+}
+
+/// Manually mark one of our own devices as verified (signs it with our cross-signing
+/// keys). Requires cross-signing to be set up (enable recovery first).
+#[tauri::command]
+pub async fn matrix_verify_device(device_id: String, state: MxState<'_>) -> Result<(), String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let user = client.user_id().ok_or("not logged in")?;
+    let did: matrix_sdk::ruma::OwnedDeviceId = device_id.as_str().into();
+    let device = client
+        .encryption()
+        .get_device(user, &did)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("unknown device")?;
+    device.verify().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Enable secure key backup + cross-signing, protected by a passphrase. Returns the
+/// recovery key (show it once; it restores keys on a new device).
+#[tauri::command]
+pub async fn matrix_recovery_enable(
+    passphrase: String,
+    state: MxState<'_>,
+) -> Result<String, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let key = client
+        .encryption()
+        .recovery()
+        .enable()
+        .with_passphrase(&passphrase)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(key)
+}
+
+/// Restore identity + key backup from a recovery key (or passphrase) on this device.
+#[tauri::command]
+pub async fn matrix_recover(recovery_key: String, state: MxState<'_>) -> Result<(), String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    client
+        .encryption()
+        .recovery()
+        .recover(&recovery_key)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Snapshot of the account's crypto trust/backup posture.
+#[derive(Serialize)]
+pub struct MatrixVerificationStatus {
+    pub cross_signing_ready: bool,
+    pub this_device_verified: bool,
+    pub recovery_state: String,
+}
+
+#[tauri::command]
+pub async fn matrix_verification_status(
+    state: MxState<'_>,
+) -> Result<MatrixVerificationStatus, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let enc = client.encryption();
+
+    let cross_signing_ready = match enc.cross_signing_status().await {
+        Some(s) => s.has_master && s.has_self_signing && s.has_user_signing,
+        None => false,
+    };
+    let this_device_verified = match enc.get_own_device().await {
+        Ok(Some(d)) => d.is_verified(),
+        _ => false,
+    };
+    let recovery_state = format!("{:?}", enc.recovery().state());
+
+    Ok(MatrixVerificationStatus {
+        cross_signing_ready,
+        this_device_verified,
+        recovery_state,
+    })
+}

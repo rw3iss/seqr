@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import type { UnlistenFn } from "@tauri-apps/api/event"
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog"
 import { api, errMessage, type MatrixMessage, type MatrixRoom, type MatrixStatus } from "../../lib/api"
+import { MatrixSecurity } from "./MatrixSecurity"
 import "./matrix.scss"
 
 interface Props {
@@ -20,6 +21,7 @@ export function MatrixChat({ status, onLogout }: Props) {
 	const [draft, setDraft] = useState("")
 	const [newVal, setNewVal] = useState("")
 	const [error, setError] = useState("")
+	const [showSecurity, setShowSecurity] = useState(false)
 
 	const activeRef = useRef<string | null>(null)
 	activeRef.current = active
@@ -118,7 +120,10 @@ export function MatrixChat({ status, onLogout }: Props) {
 			<aside class="mx-sidebar">
 				<div class="mx-me">
 					<div class="mx-me-id">{status.user_id}</div>
-					<button class="mx-logout" onClick={onLogout}>Sign out</button>
+					<div class="mx-me-actions">
+						<button class="mx-logout" onClick={() => setShowSecurity(true)}>Security</button>
+						<button class="mx-logout" onClick={onLogout}>Sign out</button>
+					</div>
 				</div>
 
 				<div class="mx-new">
@@ -192,6 +197,8 @@ export function MatrixChat({ status, onLogout }: Props) {
 					</>
 				)}
 			</main>
+
+			{showSecurity && <MatrixSecurity onClose={() => setShowSecurity(false)} />}
 		</div>
 	)
 }

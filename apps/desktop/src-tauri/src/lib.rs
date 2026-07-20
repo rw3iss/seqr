@@ -104,6 +104,11 @@ pub fn run() {
             matrix::commands::matrix_send_file,
             matrix::commands::matrix_read_media,
             matrix::commands::matrix_save_media,
+            matrix::commands::matrix_devices,
+            matrix::commands::matrix_verify_device,
+            matrix::commands::matrix_recovery_enable,
+            matrix::commands::matrix_recover,
+            matrix::commands::matrix_verification_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

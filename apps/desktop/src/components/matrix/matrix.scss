@@ -143,6 +143,78 @@
 	padding: $space-2;
 }
 
+.mx-me-actions {
+	display: flex;
+	gap: $space-2;
+	margin-top: $space-2;
+
+	button { flex: 1; font-size: 12px; }
+}
+
+.mx-modal-backdrop {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.6);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	z-index: 100;
+}
+
+.mx-modal {
+	width: 460px;
+	max-height: 85vh;
+	overflow-y: auto;
+	background: $bg-panel;
+	border: 1px solid $border;
+	border-radius: $radius;
+	padding: $space-5;
+
+	h2 { margin-top: 0; }
+
+	input { width: 100%; margin-bottom: $space-2; }
+}
+
+.mx-sec {
+	border-top: 1px solid $border;
+	padding-top: $space-3;
+	margin-top: $space-3;
+
+	h3 { margin: 0 0 $space-2; font-size: 14px; }
+}
+
+.mx-sec-row {
+	font-size: 13px;
+	color: $text;
+	padding: $space-1 0;
+}
+
+.mx-device {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: $space-2;
+
+	button { font-size: 12px; }
+}
+
+.mx-key {
+	font-size: 12px;
+	color: $text-muted;
+
+	code {
+		color: $success;
+		word-break: break-all;
+		font-family: $mono;
+	}
+}
+
+.mx-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	margin-top: $space-4;
+}
+
 .mx-composer {
 	display: flex;
 	gap: $space-2;
