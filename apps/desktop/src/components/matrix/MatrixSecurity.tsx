@@ -109,20 +109,6 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 				</section>
 
 				<section class="mx-sec">
-					<h3>Your password</h3>
-					<p class="muted" style="font-size:12px">
-						Required to set up cross-signing and to remove devices (both hit a
-						password-protected server endpoint).
-					</p>
-					<input
-						type="password"
-						placeholder="Your login password"
-						value={passphrase}
-						onInput={(e) => setPassphrase(e.currentTarget.value)}
-					/>
-				</section>
-
-				<section class="mx-sec">
 					<h3>Devices</h3>
 					{devices.map((d) => (
 						<div class="mx-sec-row mx-device" key={d.device_id}>
@@ -152,7 +138,7 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 								{!d.is_current && (
 									<button
 										disabled={busy || !passphrase}
-										title="Sign out & remove this device (needs your password above)"
+										title="Sign out & remove this device (needs your password below)"
 										onClick={() => run(() => api.matrixDeleteDevices([d.device_id], passphrase))}
 									>
 										Remove
@@ -161,6 +147,20 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 							</span>
 						</div>
 					))}
+				</section>
+
+				<section class="mx-sec">
+					<h3>Your password</h3>
+					<p class="muted" style="font-size:12px">
+						Required to set up cross-signing and to remove devices (both hit a
+						password-protected server endpoint).
+					</p>
+					<input
+						type="password"
+						placeholder="Your login password"
+						value={passphrase}
+						onInput={(e) => setPassphrase(e.currentTarget.value)}
+					/>
 				</section>
 
 				<section class="mx-sec">
