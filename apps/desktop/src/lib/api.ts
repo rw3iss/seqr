@@ -29,8 +29,21 @@ export interface AppStatus {
 	unlocked: boolean
 }
 
+export type Backend = "matrix" | "p2p"
+
 export interface AppConfig {
+	/** Active chat backend; the UI routes to the Matrix or P2P flow based on this. */
+	backend: Backend
+	/** Matrix homeserver base URL (used when backend === "matrix"). */
+	homeserver_url: string
 	mailbox_url: string
+}
+
+export interface MatrixStatus {
+	homeserver_url: string
+	logged_in: boolean
+	user_id: string | null
+	device_id: string | null
 }
 
 export interface AttachmentInfo {
@@ -77,6 +90,14 @@ export interface Settings {
 export const api = {
 	appStatus: (): Promise<AppStatus> => invoke("app_status"),
 	appConfig: (): Promise<AppConfig> => invoke("app_config"),
+
+	// --- Matrix backend (active when appConfig().backend === "matrix") ---
+	matrixStatus: (): Promise<MatrixStatus> => invoke("matrix_status"),
+	matrixRestoreSession: (): Promise<MatrixStatus> => invoke("matrix_restore_session"),
+	matrixLogin: (username: string, password: string): Promise<MatrixStatus> =>
+		invoke("matrix_login", { username, password }),
+	matrixLogout: (): Promise<void> => invoke("matrix_logout"),
+
 	createAccount: (displayName: string, password: string): Promise<ProfileBlob> =>
 		invoke("create_account", { displayName, password }),
 	unlock: (password: string): Promise<ProfileBlob> => invoke("unlock", { password }),

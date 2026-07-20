@@ -6,6 +6,7 @@
 
 mod commands;
 mod core;
+mod matrix;
 mod net;
 
 use std::sync::Arc;
@@ -40,8 +41,13 @@ pub fn run() {
             let config = AppConfig::resolve(&config_dir);
             let mailbox_url = config.mailbox_url.clone();
             let mailbox_cert = config.mailbox_cert.clone();
+            let homeserver_url = config.homeserver_url.clone();
             app.manage(config);
-            app.manage(Arc::new(SessionState::new(data_dir, mailbox_url, mailbox_cert)));
+            // Both backends are constructed; the active one is chosen by the UI from the
+            // config `backend` field (surfaced via `app_config`). P2P (legacy) state:
+            app.manage(Arc::new(SessionState::new(data_dir.clone(), mailbox_url, mailbox_cert)));
+            // Matrix (default) state:
+            app.manage(Arc::new(matrix::MatrixState::new(data_dir, homeserver_url)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -76,6 +82,11 @@ pub fn run() {
             commands::remove_friend,
             commands::rotate_group,
             commands::remove_member,
+            // Matrix backend (default).
+            matrix::commands::matrix_status,
+            matrix::commands::matrix_login,
+            matrix::commands::matrix_restore_session,
+            matrix::commands::matrix_logout,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

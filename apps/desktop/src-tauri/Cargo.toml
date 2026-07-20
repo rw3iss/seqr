@@ -41,5 +41,13 @@ iroh = "=0.92"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tokio = { version = "1", features = ["time"] }
 
+# Matrix backend — the alternative to the P2P stack above. Both are compiled in; the
+# active one is chosen at runtime from config (`backend = "matrix" | "p2p"`). Defaults
+# give e2e-encryption + automatic-room-key-forwarding + sqlite; bundled-sqlite ships the
+# C lib (no system dep, easier cross-platform); markdown for formatted sends.
+matrix-sdk = { version = "0.18", features = ["bundled-sqlite", "markdown"] }
+# Random passphrase for the Matrix store encryption (single-version, already in the tree).
+getrandom = "0.2"
+
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }

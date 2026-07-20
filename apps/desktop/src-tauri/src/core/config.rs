@@ -14,6 +14,26 @@ use serde::{Deserialize, Serialize};
 /// The user's commissioned mailbox helper (TLS-terminated by nginx, self-signed).
 pub const DEFAULT_MAILBOX_URL: &str = "https://37.27.248.79:8443";
 
+/// The self-hosted Matrix homeserver (Continuwuity on the VPS). Configurable so the app
+/// can be repointed at a future custom-domain homeserver without a rebuild.
+pub const DEFAULT_HOMESERVER_URL: &str = "https://matrix.rw3iss.com";
+
+/// Which chat backend the app runs. Both are compiled in; this selects the active one at
+/// launch. `Matrix` (default) uses the self-hosted homeserver; `P2p` is the legacy
+/// iroh/mailbox stack, kept as a fallback for direct peer-to-peer chatting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Backend {
+    Matrix,
+    P2p,
+}
+
+impl Default for Backend {
+    fn default() -> Self {
+        Backend::Matrix
+    }
+}
+
 /// The mailbox's pinned CA certificate, compiled in so a freshly installed app trusts
 /// the default mailbox with no manual setup. Override per-install with a
 /// `mailbox_cert.pem` in the config dir.
@@ -32,15 +52,36 @@ DPvPWBKhv2aNWNRNlblRJZG7SR81ALwVgcqRGMY=
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
+    /// Active chat backend (`matrix` | `p2p`). Defaults to Matrix.
+    #[serde(default)]
+    pub backend: Backend,
+    /// Matrix homeserver base URL (used when `backend = matrix`).
+    #[serde(default = "default_homeserver_url")]
+    pub homeserver_url: String,
     pub mailbox_url: String,
     /// PEM of the mailbox's self-signed certificate to pin (None => system roots only).
     #[serde(default)]
     pub mailbox_cert: Option<String>,
 }
 
+fn default_homeserver_url() -> String {
+    DEFAULT_HOMESERVER_URL.to_string()
+}
+
+/// Case-insensitive backend name; anything but `p2p` falls back to Matrix.
+fn parse_backend(s: &str) -> Backend {
+    if s.eq_ignore_ascii_case("p2p") {
+        Backend::P2p
+    } else {
+        Backend::Matrix
+    }
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            backend: Backend::default(),
+            homeserver_url: DEFAULT_HOMESERVER_URL.to_string(),
             mailbox_url: DEFAULT_MAILBOX_URL.to_string(),
             mailbox_cert: Some(DEFAULT_MAILBOX_CERT.to_string()),
         }
@@ -53,17 +94,32 @@ impl AppConfig {
     pub fn resolve(config_dir: &Path) -> Self {
         let mut cfg = AppConfig::default();
         if let Ok(text) = std::fs::read_to_string(config_dir.join("seqr.toml")) {
-            // Minimal single-key parse to avoid a toml dependency for one line.
+            // Minimal key=value parse to avoid a toml dependency for a handful of lines.
             for line in text.lines() {
-                if let Some(rest) = line.trim().strip_prefix("mailbox_url") {
+                let line = line.trim();
+                if let Some(rest) = line.strip_prefix("mailbox_url") {
                     if let Some(v) = rest.split('=').nth(1) {
                         cfg.mailbox_url = v.trim().trim_matches('"').to_string();
+                    }
+                } else if let Some(rest) = line.strip_prefix("homeserver_url") {
+                    if let Some(v) = rest.split('=').nth(1) {
+                        cfg.homeserver_url = v.trim().trim_matches('"').to_string();
+                    }
+                } else if let Some(rest) = line.strip_prefix("backend") {
+                    if let Some(v) = rest.split('=').nth(1) {
+                        cfg.backend = parse_backend(v.trim().trim_matches('"'));
                     }
                 }
             }
         }
         if let Ok(url) = std::env::var("SEQR_MAILBOX_URL") {
             cfg.mailbox_url = url;
+        }
+        if let Ok(url) = std::env::var("SEQR_HOMESERVER_URL") {
+            cfg.homeserver_url = url;
+        }
+        if let Ok(b) = std::env::var("SEQR_BACKEND") {
+            cfg.backend = parse_backend(&b);
         }
         // Pin the mailbox cert if present alongside the config.
         if let Ok(pem) = std::fs::read_to_string(config_dir.join("mailbox_cert.pem")) {

@@ -108,12 +108,16 @@ at `/_conduwuit/server_version`. Dendrite is retired from this plan (maintenance
 image modal, `SettingsModal`, `CreateGroupModal`/members UI, `FriendRequests` (→ invites),
 `LoginView` (→ Matrix login/registration), SCSS tokens & components, Tauri config, screen-security.
 
-**Rewritten (backend):** a new `core/` that wraps `matrix-rust-sdk` and exposes a thin Tauri command
-surface + events, replacing every current `core/*` module and both shared crates and the mailbox.
+**Added (backend):** a new `src/matrix/` module wrapping `matrix-rust-sdk` with a thin Tauri command
+surface + events (login/session/timeline/…), running *alongside* the existing `core/`.
 
-**Deleted:** `crates/seqr-crypto`, `crates/seqr-protocol`, `services/mailbox`, `core/transport.rs`,
-`core/packet.rs`, `core/message.rs`, `core/group.rs`, `core/conversation.rs`, `core/attachment.rs`
-transport bits, `core/vault.rs`. (Archive on a branch/tag for reference.)
+**Retained, not deleted — DECISION D (2026-07-20): runtime dual-backend.** The legacy P2P stack
+(`core/*`, `seqr-crypto`, `seqr-protocol`, `net.rs`, the mailbox) is **kept compiled in** as a
+selectable fallback for direct peer-to-peer chatting later. `AppConfig::backend` (`matrix` | `p2p`,
+default `matrix`) picks the active backend at launch; both command sets are registered (names don't
+collide). Cost accepted: both dependency trees compile (iroh + matrix-sdk), verified to share a single
+`ed25519-dalek 2.2` / `curve25519-dalek 4.1` (vodozemac, iroh, seqr-crypto all unify — no conflict).
+`services/mailbox` stays deployed but idle. (If the P2P path is ever formally dropped, archive on a tag.)
 
 > **No data migration.** Because identities and crypto change entirely, existing Seqr installs start
 > **fresh** on Matrix (new `@user:domain`, new keys). Old local history isn't carried over (could be
@@ -321,9 +325,14 @@ Matrix gives us these largely "for free" — prioritized:
   v26.6.2 (static musl, systemd, federation-off, registration-token gated), admin `@ryan:rw3iss.com`,
   verified register→login→room→send→sync→read-back locally, documented. **Public exposure done too:**
   `https://matrix.rw3iss.com` live (gray-cloud DNS + Let's Encrypt + nginx proxy), public login verified.
-- **M2 — Desktop client MVP.** New Tauri Rust core on `matrix-sdk`: login, restore session (persistent),
-  RoomListService list, Timeline for one room, send/receive **E2E** text. Exit criteria: two desktop
-  installs chat encrypted; session & keys survive restart.
+- **M2 — Desktop client MVP.** *(in progress)* New `src/matrix/` core on `matrix-sdk`: login, restore
+  session (persistent), RoomListService list, Timeline for one room, send/receive **E2E** text. Exit
+  criteria: two desktop installs chat encrypted; session & keys survive restart.
+  - ✅ **M2.0 — dual-backend scaffolding (2026-07-20):** `matrix-sdk 0.18` added (graph unifies with
+    iroh, see §5); `AppConfig.backend`/`homeserver_url` (default `matrix` / `https://matrix.rw3iss.com`);
+    `MatrixState` + commands `matrix_login`/`matrix_restore_session`/`matrix_logout`/`matrix_status`
+    (SQLite stores, `FullSession` persist/restore per the SDK example); wired in `lib.rs`; TS `api.ts`
+    types + methods. `cargo check` + `tsc` green. *Next:* route `LoginView` by backend; sync + room list.
 - **M3 — Rooms + DMs + media.** Create/join rooms, DMs, invites/accept, membership/power levels,
   encrypted media upload/download with our attachment UI + image modal.
 - **M4 — Trust & recovery.** Cross-signing, SAS/QR **device verification** UX, **key backup/recovery**.
