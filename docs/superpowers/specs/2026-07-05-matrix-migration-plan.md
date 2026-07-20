@@ -342,8 +342,10 @@ Matrix gives us these largely "for free" — prioritized:
   query + back button). ⚠️ **Gated on your machine:** `tauri android init` + device/emulator run need
   the Android SDK/NDK + a device. Exact commands in the **cross-platform runbook**
   (`docs/superpowers/specs/2026-07-20-matrix-cross-platform-runbook.md`).
-- **M6 — Push.** ⚠️ **Gated on your FCM/APNs accounts.** Architecture + Sygnal deploy steps + pusher
-  registration are written up in the runbook; can't be exercised without push credentials.
+- **M6 — Push.** ◑ **Gateway DEPLOYED (2026-07-20).** Sygnal live on the VPS (`sygnal.service`,
+  FCM v1 project `seqr-comm`), exposed at `https://matrix.rw3iss.com/_matrix/push/v1/notify`;
+  client `matrix_register_pusher` implemented. **Remaining:** the on-device FCM token (needs the
+  Android build / `google-services.json`) and an APNs app block for iOS. See the runbook §M6.
 - **M7 — iOS.** ⚠️ **Gated on a Mac + Xcode + Apple Developer account.** `tauri ios init` + signing +
   APNs steps in the runbook.
 - **M8 — Web (optional).** Decision recorded (**`matrix-js-sdk`**, separate build — the Tauri Rust-IPC

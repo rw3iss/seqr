@@ -44,6 +44,20 @@ pnpm tauri android build --apk   # or --aab for Play
 
 ## M6 — Push notifications
 
+**✅ Gateway DEPLOYED (2026-07-20).** Sygnal (element-hq 0.17) runs on the VPS as
+`sygnal.service` (Python 3.12 venv `/opt/sygnal`, user `sygnal`, `127.0.0.1:5000`),
+configured with your **FCM v1** service account (`/etc/sygnal/fcm.json`, project `seqr-comm`,
+app id `com.seqr.app.android`). It's exposed through the existing matrix vhost at
+`/_matrix/push/`, so the pusher URL is **`https://matrix.rw3iss.com/_matrix/push/v1/notify`**
+(verified: malformed POST → `400` from Sygnal). Client command **`matrix_register_pusher`**
+is implemented (`api.matrixRegisterPusher(pushKey, appId)`).
+
+**Remaining (gated on the Android build):** obtain the **FCM registration token** on-device
+(needs the Firebase Android client config `google-services.json` + the FCM SDK wired into the
+`gen/android` project from M5), then call `matrixRegisterPusher(token, "com.seqr.app.android")`
+after login. **iOS/APNs:** add a `com.seqr.app.ios` app block to `/etc/sygnal/sygnal.yaml`
+with your `.p8` key (needs the Apple push key from M7).
+
 **Why a gateway:** Matrix push goes homeserver → **Sygnal** (push gateway) → FCM (Android) /
 APNs (iOS). Continuwuity emits the push; Sygnal holds your FCM/APNs secrets and forwards.
 Use `event_id_only` so no message content leaves the gateway; the app fetches + decrypts on

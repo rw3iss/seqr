@@ -166,6 +166,9 @@ export const api = {
 		invoke("matrix_recover", { recoveryKey }),
 	matrixVerificationStatus: (): Promise<MatrixVerificationStatus> =>
 		invoke("matrix_verification_status"),
+	/** Register a push token with the homeserver (called from the mobile push SDK). */
+	matrixRegisterPusher: (pushKey: string, appId: string): Promise<void> =>
+		invoke("matrix_register_pusher", { pushKey, appId }),
 	onMatrixMessage: (cb: (m: MatrixMessage) => void): Promise<UnlistenFn> =>
 		listen<MatrixMessage>(MATRIX_MESSAGE_EVENT, (e) => cb(e.payload)),
 

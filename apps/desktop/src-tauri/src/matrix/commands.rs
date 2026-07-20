@@ -626,6 +626,47 @@ pub async fn matrix_recover(recovery_key: String, state: MxState<'_>) -> Result<
     Ok(())
 }
 
+/// Register an HTTP pusher so the homeserver forwards notifications to our Sygnal gateway
+/// (→ FCM/APNs). `push_key` is the platform push token (FCM registration token on Android /
+/// APNs device token on iOS), obtained from the native push SDK on mobile. `event_id_only`
+/// so no message content leaves via the gateway; the app fetches + decrypts on wake.
+#[tauri::command]
+pub async fn matrix_register_pusher(
+    push_key: String,
+    app_id: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::api::client::push::set_pusher::v3::Request as SetPusher;
+    use matrix_sdk::ruma::api::client::push::{PusherIds, PusherInit, PusherKind};
+    use matrix_sdk::ruma::push::{HttpPusherData, PushFormat};
+
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+
+    let url = format!(
+        "{}/_matrix/push/v1/notify",
+        state.homeserver_url.trim_end_matches('/')
+    );
+    let mut http = HttpPusherData::new(url);
+    http.format = Some(PushFormat::EventIdOnly);
+
+    let pusher = PusherInit {
+        ids: PusherIds::new(push_key, app_id),
+        kind: PusherKind::Http(http),
+        app_display_name: "Seqr".to_owned(),
+        device_display_name: "Seqr".to_owned(),
+        profile_tag: None,
+        lang: "en".to_owned(),
+    }
+    .into();
+
+    client
+        .send(SetPusher::post(pusher))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 /// Snapshot of the account's crypto trust/backup posture.
 #[derive(Serialize)]
 pub struct MatrixVerificationStatus {
