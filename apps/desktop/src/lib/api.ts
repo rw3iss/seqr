@@ -130,7 +130,9 @@ export const api = {
 
 	// --- Matrix backend (active when appConfig().backend === "matrix") ---
 	matrixStatus: (): Promise<MatrixStatus> => invoke("matrix_status"),
-	matrixRestoreSession: (): Promise<MatrixStatus> => invoke("matrix_restore_session"),
+	matrixHasSession: (): Promise<boolean> => invoke("matrix_has_session"),
+	matrixUnlock: (password: string): Promise<MatrixStatus> =>
+		invoke("matrix_unlock", { password }),
 	matrixLogin: (username: string, password: string): Promise<MatrixStatus> =>
 		invoke("matrix_login", { username, password }),
 	matrixRegister: (username: string, password: string, token: string): Promise<MatrixStatus> =>

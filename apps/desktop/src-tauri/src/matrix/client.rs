@@ -4,15 +4,18 @@
 //! to rebuild the client (`ClientSession`) with the SDK's own `MatrixSession` (access
 //! token + device id). On login we write it; on restart we read it and `restore_session`.
 //!
-//! ⚠️ TODO(security): the session file currently stores the store passphrase and access
-//! token in plaintext under the app-data dir (same exposure as the old vault file). A
-//! follow-up should encrypt it at rest with a key derived from the login password
-//! (Argon2id), reusing `seqr-crypto`, so a stolen data dir alone can't unlock the store.
+//! The session file is **encrypted at rest**: a key is derived from the login password via
+//! Argon2id (`seqr-crypto`) and used to AEAD-seal the `FullSession` (which holds the access
+//! token + store passphrase). A stolen data dir alone therefore can't unlock the store; the
+//! password is required at launch (see `matrix_unlock`).
 
+use std::path::Path;
 use std::path::PathBuf;
 
+use base64::Engine;
 use matrix_sdk::{authentication::matrix::MatrixSession, Client};
 use serde::{Deserialize, Serialize};
+use seqr_crypto::{aead, kdf};
 
 /// Everything needed to rebuild the `Client` (independent of the SDK's session type).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,4 +57,47 @@ pub fn new_passphrase() -> String {
     let mut bytes = [0u8; 32];
     getrandom::getrandom(&mut bytes).expect("system RNG");
     hex::encode(bytes)
+}
+
+/// On-disk envelope for the encrypted session: cleartext Argon2 salt wrapping the sealed
+/// `FullSession`.
+#[derive(Serialize, Deserialize)]
+struct SealedSession {
+    salt: String,
+    sealed: String,
+}
+
+const SESSION_AAD: &[u8] = b"seqr-matrix-session-v1";
+
+/// Encrypt + write the session under a key derived from `password` (Argon2id).
+pub fn write_encrypted_session(
+    path: &Path,
+    password: &str,
+    full: &FullSession,
+) -> Result<(), String> {
+    let salt = kdf::generate_salt();
+    let key = kdf::derive_vault_key(password.as_bytes(), &salt).map_err(|e| e.to_string())?;
+    let plaintext = serde_json::to_vec(full).map_err(|e| e.to_string())?;
+    let sealed = aead::seal(&key, &plaintext, SESSION_AAD);
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let env = SealedSession {
+        salt: b64.encode(salt),
+        sealed: b64.encode(sealed),
+    };
+    let json = serde_json::to_string(&env).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Read + decrypt the session with `password`. Errors (incl. a wrong password) surface as
+/// a generic message.
+pub fn read_encrypted_session(path: &Path, password: &str) -> Result<FullSession, String> {
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let env: SealedSession = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let b64 = base64::engine::general_purpose::STANDARD;
+    let salt = b64.decode(&env.salt).map_err(|e| e.to_string())?;
+    let sealed = b64.decode(&env.sealed).map_err(|e| e.to_string())?;
+    let key = kdf::derive_vault_key(password.as_bytes(), &salt).map_err(|e| e.to_string())?;
+    let plaintext = aead::open(&key, &sealed, SESSION_AAD).map_err(|_| "wrong password".to_string())?;
+    serde_json::from_slice(&plaintext).map_err(|e| e.to_string())
 }

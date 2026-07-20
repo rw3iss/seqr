@@ -13,7 +13,10 @@ use matrix_sdk::{room::MessagesOptions, Client};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use crate::matrix::client::{build_client, new_passphrase, ClientSession, FullSession};
+use crate::matrix::client::{
+    build_client, new_passphrase, read_encrypted_session, write_encrypted_session, ClientSession,
+    FullSession,
+};
 use crate::matrix::sync::MatrixMessage;
 use crate::matrix::MatrixState;
 
@@ -95,23 +98,42 @@ pub async fn matrix_login(
         user_session,
         sync_token: None,
     };
-    let json = serde_json::to_string(&full).map_err(|e| e.to_string())?;
-    std::fs::write(state.session_file(), json).map_err(|e| e.to_string())?;
+    // Sealed at rest with a key derived from the login password (Argon2id).
+    write_encrypted_session(&state.session_file(), &password, &full)?;
 
     let status = status_of(Some(&client), &state.homeserver_url);
     *state.client.write().await = Some(client);
     Ok(status)
 }
 
-/// Rebuild the client from a persisted session (called at startup). No-op if none saved.
+/// Whether a valid *encrypted* session is saved on disk (i.e. show the unlock screen at
+/// startup). A stale plaintext session from an older build is removed so the user simply
+/// logs in again (which writes the new sealed format).
 #[tauri::command]
-pub async fn matrix_restore_session(state: MxState<'_>) -> Result<MatrixStatus, String> {
+pub async fn matrix_has_session(state: MxState<'_>) -> Result<bool, String> {
+    let file = state.session_file();
+    let Ok(text) = std::fs::read_to_string(&file) else {
+        return Ok(false);
+    };
+    let is_sealed = serde_json::from_str::<serde_json::Value>(&text)
+        .ok()
+        .map(|v| v.get("salt").is_some() && v.get("sealed").is_some())
+        .unwrap_or(false);
+    if !is_sealed {
+        let _ = std::fs::remove_file(&file);
+    }
+    Ok(is_sealed)
+}
+
+/// Decrypt the saved session with the login password and restore the client (called at
+/// startup when `matrix_has_session` is true).
+#[tauri::command]
+pub async fn matrix_unlock(password: String, state: MxState<'_>) -> Result<MatrixStatus, String> {
     let file = state.session_file();
     if !file.exists() {
         return Ok(status_of(None, &state.homeserver_url));
     }
-    let json = std::fs::read_to_string(&file).map_err(|e| e.to_string())?;
-    let full: FullSession = serde_json::from_str(&json).map_err(|e| e.to_string())?;
+    let full = read_encrypted_session(&file, &password)?;
 
     let client = build_client(
         &full.client_session.homeserver,
@@ -217,7 +239,7 @@ pub async fn matrix_register(
     let auth = client.matrix_auth();
     let mut req = RegRequest::new();
     req.username = Some(username);
-    req.password = Some(password);
+    req.password = Some(password.clone());
 
     // First call returns a UIAA challenge carrying the session id; answer it with the
     // registration token and call again.
@@ -247,8 +269,7 @@ pub async fn matrix_register(
         user_session,
         sync_token: None,
     };
-    let json = serde_json::to_string(&full).map_err(|e| e.to_string())?;
-    std::fs::write(state.session_file(), json).map_err(|e| e.to_string())?;
+    write_encrypted_session(&state.session_file(), &password, &full)?;
 
     let status = status_of(Some(&client), &state.homeserver_url);
     *state.client.write().await = Some(client);
