@@ -22,16 +22,21 @@ applied in `MainActivity.kt` (parity with desktop). App id `com.seqr.app`.
 Artifact: `gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
 (~818 MB **debug**, unstripped — a release build strips this to tens of MB).
 
-**Reproduce / run:**
+**Reproduce / run — convenience script (`scripts/android.sh`):**
+```bash
+# build (arm64 debug) -> install -> launch, with env auto-detected:
+pnpm --dir apps/desktop android          # or: ./scripts/android.sh
+pnpm --dir apps/desktop android:dev      # live-reload (tauri android dev)
+# options: --release  --target x86_64  --no-launch  --uninstall-old  --help
+```
+
+Equivalent raw commands:
 ```bash
 export ANDROID_HOME=~/Android/Sdk
 export NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264
 cd apps/desktop
 pnpm tauri android build --apk --debug --target aarch64   # debug APK (auto-signed)
-# run on a device/emulator:
 adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
-# or live-reload dev (boots the AVD 'claimleo' or a plugged-in device):
-pnpm tauri android dev
 ```
 
 **Release (for distribution) — needs a signing keystore:**
