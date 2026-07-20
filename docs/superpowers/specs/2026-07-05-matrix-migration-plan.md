@@ -49,15 +49,12 @@ The user requested **Dendrite**. A duty-bound flag from current research (July 2
 - The **Rust family — Continuwuity / conduwuit** (forks of Conduit) — now has the momentum: a
   **single binary with an embedded database (RocksDB), no Postgres**, low ops, actively developed.
 
-**Recommendation:** given your server currently has **~440 MB RAM available** (see §6), a
-**single-binary, embedded-DB Rust homeserver is the better fit** than Dendrite + Postgres, both on
-memory and on future momentum. I therefore recommend **Continuwuity** (or conduwuit) as the primary
-target, with **Dendrite as the documented fallback** since you named it.
-
-> **Open decision A (needs your call):** Dendrite (as requested, Go + Postgres, ~512 MB) vs.
-> Continuwuity/conduwuit (Rust, single binary, embedded DB, lighter). The client work is
-> **identical either way** — this only affects §6 (server setup). The plan below is written to work
-> with either; §6 gives both recipes.
+**DECISION A — RESOLVED (2026-07-20): Continuwuity.** A single-binary, embedded-DB Rust homeserver
+is the better fit than Dendrite + Postgres on both memory and future momentum. **Continuwuity**
+(fork of Conduit; binary is named `conduwuit`, service `conduwuit.service`) ships a **fully-static
+musl binary** (jemalloc + io_uring statically linked, no dependencies), uses **~32 MB fresh** (256 MB
+generous), embeds RocksDB (no Postgres), listens on **`127.0.0.1:6167`** by default, and health-checks
+at `/_conduwuit/server_version`. Dendrite is retired from this plan (maintenance mode).
 
 ---
 
@@ -130,15 +127,28 @@ transport bits, `core/vault.rs`. (Archive on a branch/tag for reference.)
 **ports 80/443 already in use** (an existing web app), **~440 MB RAM available of 5.8 GB**.
 
 ### 6.0 Prerequisites (do first)
-1. **Audit RAM.** 5.3 GB is already in use by something on this box (the 80/443 service). Identify it
-   (`ps aux --sort=-%mem | head`), decide whether to free/relocate it, or **resize the VPS** to ≥ 4 GB
-   free. A homeserver + Postgres wants ~1 GB headroom; Continuwuity (embedded DB) less.
-2. **Domain + DNS.** A homeserver needs a stable name. Pick e.g. **`matrix.ryanweiss.net`** (reuse the
-   existing domain) → A record → `162.35.181.92`. Decide the **`server_name`** (the part after `@` in
-   user ids) — commonly the bare domain `ryanweiss.net` **delegated** to `matrix.ryanweiss.net` via
-   `.well-known`, or simply `matrix.ryanweiss.net` for simplicity.
-   - **Open decision B:** user id form — `@ryan:ryanweiss.net` (needs `.well-known` delegation) vs
-     `@ryan:matrix.ryanweiss.net` (simplest). Recommend the delegated bare-domain form for nice ids.
+1. **Audit RAM — ✅ RESOLVED (2026-07-20).** The RAM was consumed by `trader-ml.service` (a
+   Python/uvicorn+LightGBM sidecar) that had leaked to ~8.3 GB, almost all in swap, thrashing the box.
+   Fixed without a reboot: capped it (`MemoryMax` drop-in), `systemctl disable --now` the whole trader
+   stack (trader-api/ingest/ml/worker + timer), killed the user's procs, compacted swap
+   (`swapoff -a && swapon -a`), and cleared 1.5 GB of Python core dumps. Result: RAM 5.3 GB → 1.6 GB
+   used (**4.3 GB free**), swap 8.7 GB → 0. Continuwuity's actual footprint is ~22 MB, so headroom is ample.
+2. **Domain + DNS — DECISION B RESOLVED (2026-07-20).**
+   - **`server_name = rw3iss.com`** → user ids are **`@you:rw3iss.com`**. **This is permanent** for
+     this homeserver (baked into every user/room id; cannot be changed without wiping the DB). A future
+     custom Seqr domain would mean a *new* homeserver or a migration — so the **client's homeserver URL
+     is made configurable** (like the old `mailbox_url`) to repoint the app, but the identity domain
+     `rw3iss.com` is fixed here.
+   - **Homeserver reachability:** `rw3iss.com` is **Cloudflare-proxied** (resolves to `104.21.x`, not
+     the box) with **no origin LE cert** — and Cloudflare's free tier caps uploads at 100 MB and its
+     100 s timeout breaks Matrix long-polling sync. So the client-server API must be reached over a
+     **DNS-only (gray-cloud) subdomain pointing directly at `162.35.181.92`**, e.g.
+     **`matrix.rw3iss.com`**, with its own Let's Encrypt cert.
+   - **Delegation:** serve `/.well-known/matrix/client` on **`https://rw3iss.com`** (through Cloudflare
+     is fine — it's a tiny static JSON, no upload/WS concerns) pointing `base_url` → `https://matrix.rw3iss.com`.
+   - **⚠️ USER ACTION REQUIRED:** add a Cloudflare DNS record **`matrix.rw3iss.com` A `162.35.181.92`,
+     proxy = OFF (gray cloud / DNS-only)**. Everything up to TLS can be staged without it; the LE cert
+     and public exposure need this record to resolve.
 3. **TLS.** The existing box already runs nginx + certbot elsewhere; on this box we terminate TLS for
    the homeserver (Let's Encrypt via certbot, or the existing web server if it's nginx).
 4. **Reverse proxy** in front of the homeserver on 443 (path-routed `/_matrix/` + `/.well-known/matrix/`),
@@ -173,6 +183,28 @@ transport bits, `core/vault.rs`. (Archive on a branch/tag for reference.)
 - Firewall: 443 (and 8448 only if federating). Backups of the DB + media + signing keys (critical:
   losing the homeserver signing key is unrecoverable). Basic monitoring (systemd + a `/health` check
   + disk alerts, since media grows). Log rotation.
+
+### 6.5 Deployment record — ✅ DONE (2026-07-20)
+Continuwuity **v26.6.2** is installed, running, and verified on `162.35.181.92`.
+
+| Item | Value |
+|------|-------|
+| Binary | `/usr/local/bin/conduwuit` (`conduwuit-haswell-linux-static-amd64-maxperf`, static musl) |
+| Service | `conduwuit.service` (systemd, hardened, `User=conduwuit`, `MemoryMax=1G`, enabled at boot) |
+| Config | `/etc/conduwuit/conduwuit.toml` (0640) — `server_name=rw3iss.com`, `127.0.0.1:6167`, RocksDB, `allow_federation=false`, `max_request_size=1 GiB`, registration-token gated |
+| Data | `/var/lib/conduwuit` (RocksDB) |
+| Ops home | `/var/www/seqr-matrix/` — README + `deploy/` (staged nginx vhost, unit + config copies) |
+| Footprint | ~22 MB RAM |
+| Admin user | `@ryan:rw3iss.com` (created via the boot-log registration token) |
+
+**Verified locally** (`127.0.0.1:6167`): `/_matrix/client/versions` → up to v1.18; password login
+advertised; full round-trip **register → login → whoami → createRoom → send → sync → read-back** all `200`.
+Documented in the box's `~/README.md` (Deployed apps) and `/var/www/seqr-matrix/README.md`.
+
+**Remaining for public exposure (blocked on one user action):** the nginx vhost
+(`/var/www/seqr-matrix/deploy/matrix.rw3iss.com.conf`) is staged but not active — it needs the
+gray-cloud DNS record for `matrix.rw3iss.com` (§6.0.2) before certbot can issue a cert. Once the
+record exists: `certbot certonly --webroot`, copy the vhost into `conf.d`, reload nginx.
 
 ---
 
@@ -282,9 +314,10 @@ Matrix gives us these largely "for free" — prioritized:
 
 - **M0 — Research & decisions** *(this doc)* — pick homeserver (A), user-id form (B), registration (C),
   domain, and confirm push accounts (E).
-- **M1 — Homeserver up.** Provision server (free RAM/resize), DNS+TLS, install homeserver, `.well-known`,
-  create test accounts, verify federation-off and login from Element (sanity check the backend before
-  touching our client).
+- **M1 — Homeserver up. ✅ DONE (2026-07-20, see §6.5).** Freed server RAM, installed Continuwuity
+  v26.6.2 (static musl, systemd, federation-off, registration-token gated), admin `@ryan:rw3iss.com`,
+  verified register→login→room→send→sync→read-back locally, documented. **Pending only** the public
+  TLS vhost, which is staged and blocked on the `matrix.rw3iss.com` gray-cloud DNS record (§6.0.2).
 - **M2 — Desktop client MVP.** New Tauri Rust core on `matrix-sdk`: login, restore session (persistent),
   RoomListService list, Timeline for one room, send/receive **E2E** text. Exit criteria: two desktop
   installs chat encrypted; session & keys survive restart.
@@ -306,8 +339,9 @@ Each milestone is a reviewable checkpoint; M1–M4 are the critical path to "it 
 ## 13. Risks & open decisions (consolidated)
 
 **Decisions needed from you:**
-- **A.** Homeserver: Continuwuity/conduwuit (recommended) vs Dendrite (as requested).
-- **B.** User-id form: `@you:ryanweiss.net` (delegated) vs `@you:matrix.ryanweiss.net`.
+- **A. ✅ RESOLVED — Continuwuity** (Rust, single binary, embedded DB).
+- **B. ✅ RESOLVED — `@you:rw3iss.com`** (server_name fixed; client homeserver URL configurable).
+  Homeserver served at gray-cloud `matrix.rw3iss.com` (⚠️ needs a Cloudflare DNS record).
 - **C.** Registration: tokens (recommended) vs admin-created vs open.
 - **D.** Web later: Rust-SDK-WASM vs `matrix-js-sdk` (defer).
 - **E.** Push accounts: create a **Firebase/FCM** project and **Apple Developer** account? (required for
