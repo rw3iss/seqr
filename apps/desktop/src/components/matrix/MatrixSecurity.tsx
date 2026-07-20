@@ -109,6 +109,20 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 				</section>
 
 				<section class="mx-sec">
+					<h3>Your password</h3>
+					<p class="muted" style="font-size:12px">
+						Required to set up cross-signing and to remove devices (both hit a
+						password-protected server endpoint).
+					</p>
+					<input
+						type="password"
+						placeholder="Your login password"
+						value={passphrase}
+						onInput={(e) => setPassphrase(e.currentTarget.value)}
+					/>
+				</section>
+
+				<section class="mx-sec">
 					<h3>Devices</h3>
 					{devices.map((d) => (
 						<div class="mx-sec-row mx-device" key={d.device_id}>
@@ -116,52 +130,57 @@ export function MatrixSecurity({ onClose }: { onClose: () => void }) {
 								{d.display_name || d.device_id}
 								{d.is_current && " (this device)"} — {d.verified ? "✅" : "unverified"}
 							</span>
-							{!d.verified && !d.is_current && (
-								<span class="mx-device-btns">
+							<span class="mx-device-btns">
+								{!d.verified && !d.is_current && (
+									<>
+										<button
+											disabled={busy}
+											title="Compare emoji with the other device"
+											onClick={() => api.matrixRequestVerification(d.device_id).catch((e) => setError(errMessage(e)))}
+										>
+											Verify
+										</button>
+										<button
+											disabled={busy}
+											title="Mark trusted by cross-signing (no emoji check)"
+											onClick={() => run(() => api.matrixVerifyDevice(d.device_id))}
+										>
+											Trust
+										</button>
+									</>
+								)}
+								{!d.is_current && (
 									<button
-										disabled={busy}
-										title="Compare emoji with the other device"
-										onClick={() => api.matrixRequestVerification(d.device_id).catch((e) => setError(errMessage(e)))}
+										disabled={busy || !passphrase}
+										title="Sign out & remove this device (needs your password above)"
+										onClick={() => run(() => api.matrixDeleteDevices([d.device_id], passphrase))}
 									>
-										Verify (emoji)
+										Remove
 									</button>
-									<button
-										disabled={busy}
-										title="Mark trusted by cross-signing (no emoji check)"
-										onClick={() => run(() => api.matrixVerifyDevice(d.device_id))}
-									>
-										Trust
-									</button>
-								</span>
-							)}
+								)}
+							</span>
 						</div>
 					))}
 				</section>
 
 				<section class="mx-sec">
-					<h3>Enable key backup</h3>
+					<h3>Set up cross-signing &amp; backup</h3>
 					<p class="muted" style="font-size:12px">
-						Bootstraps cross-signing + encrypted server backup, protected by a passphrase.
-						You'll get a recovery key — save it.
+						Creates your cross-signing keys + encrypted server backup (uses the password
+						above), so other devices can be verified. You'll get a recovery key — save it.
 					</p>
-					<input
-						type="password"
-						placeholder="Recovery passphrase"
-						value={passphrase}
-						onInput={(e) => setPassphrase(e.currentTarget.value)}
-					/>
 					<button
 						class="primary"
 						disabled={busy || !passphrase}
 						onClick={() =>
 							run(async () => {
+								await api.matrixBootstrapCrossSigning(passphrase)
 								const key = await api.matrixRecoveryEnable(passphrase)
 								setNewKey(key)
-								setPassphrase("")
 							})
 						}
 					>
-						Enable
+						Set up
 					</button>
 					{newKey && (
 						<p class="mx-key">

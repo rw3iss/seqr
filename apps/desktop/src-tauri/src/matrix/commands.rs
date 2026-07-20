@@ -703,8 +703,43 @@ pub async fn matrix_verify_device(device_id: String, state: MxState<'_>) -> Resu
     Ok(())
 }
 
-/// Enable secure key backup + cross-signing, protected by a passphrase. Returns the
-/// recovery key (show it once; it restores keys on a new device).
+/// Bootstrap cross-signing (create the master / self-signing / user-signing keys). The key
+/// upload is UIAA-protected, so the login password is required. Idempotent — does nothing if
+/// cross-signing already exists. This is the prerequisite for cross-device verification.
+#[tauri::command]
+pub async fn matrix_bootstrap_cross_signing(
+    password: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::api::client::uiaa;
+
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let user = client.user_id().ok_or("not logged in")?.to_owned();
+    let enc = client.encryption();
+
+    // First attempt without auth; the server answers with a UIAA challenge carrying a
+    // session id, which we complete with the password.
+    if let Err(e) = enc.bootstrap_cross_signing_if_needed(None).await {
+        let info = e
+            .as_uiaa_response()
+            .ok_or_else(|| e.to_string())?
+            .clone();
+        let mut pw = uiaa::Password::new(
+            uiaa::UserIdentifier::from(user.clone()),
+            password,
+        );
+        pw.session = info.session.clone();
+        enc.bootstrap_cross_signing_if_needed(Some(uiaa::AuthData::Password(pw)))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Enable secure key backup + secret storage (recovery), protected by a passphrase. Stores
+/// the (already-bootstrapped) cross-signing keys into SSSS so another device can restore
+/// them from the recovery key. Returns the recovery key — show it once.
 #[tauri::command]
 pub async fn matrix_recovery_enable(
     passphrase: String,
@@ -720,6 +755,39 @@ pub async fn matrix_recovery_enable(
         .await
         .map_err(|e| e.to_string())?;
     Ok(key)
+}
+
+/// Delete devices (e.g. stale logins). UIAA-protected → needs the login password.
+#[tauri::command]
+pub async fn matrix_delete_devices(
+    device_ids: Vec<String>,
+    password: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    use matrix_sdk::ruma::api::client::uiaa;
+
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let user = client.user_id().ok_or("not logged in")?.to_owned();
+    let ids: Vec<matrix_sdk::ruma::OwnedDeviceId> =
+        device_ids.iter().map(|d| d.as_str().into()).collect();
+
+    if let Err(e) = client.delete_devices(&ids, None).await {
+        let info = e
+            .as_uiaa_response()
+            .ok_or_else(|| e.to_string())?
+            .clone();
+        let mut pw = uiaa::Password::new(
+            uiaa::UserIdentifier::from(user.clone()),
+            password,
+        );
+        pw.session = info.session.clone();
+        client
+            .delete_devices(&ids, Some(uiaa::AuthData::Password(pw)))
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Restore identity + key backup from a recovery key (or passphrase) on this device.

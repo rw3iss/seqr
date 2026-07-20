@@ -185,8 +185,12 @@ export const api = {
 	matrixDevices: (): Promise<MatrixDevice[]> => invoke("matrix_devices"),
 	matrixVerifyDevice: (deviceId: string): Promise<void> =>
 		invoke("matrix_verify_device", { deviceId }),
+	matrixBootstrapCrossSigning: (password: string): Promise<void> =>
+		invoke("matrix_bootstrap_cross_signing", { password }),
 	matrixRecoveryEnable: (passphrase: string): Promise<string> =>
 		invoke("matrix_recovery_enable", { passphrase }),
+	matrixDeleteDevices: (deviceIds: string[], password: string): Promise<void> =>
+		invoke("matrix_delete_devices", { deviceIds, password }),
 	matrixRecover: (recoveryKey: string): Promise<void> =>
 		invoke("matrix_recover", { recoveryKey }),
 	matrixVerificationStatus: (): Promise<MatrixVerificationStatus> =>
