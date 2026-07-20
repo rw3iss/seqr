@@ -62,3 +62,10 @@ rustls = { version = "0.23", features = ["aws_lc_rs"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+
+# Optimize dependencies even in dev/debug builds. matrix-sdk's SQLite store-cipher KDF and
+# our Argon2id session sealing are pure crypto that runs ~10-50x slower unoptimized — on an
+# Android debug build that made login take ~14s (all in build_client). Our own crate stays
+# unoptimized so incremental rebuilds remain fast.
+[profile.dev.package."*"]
+opt-level = 3
