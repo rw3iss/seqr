@@ -325,26 +325,35 @@ Matrix gives us these largely "for free" — prioritized:
   v26.6.2 (static musl, systemd, federation-off, registration-token gated), admin `@ryan:rw3iss.com`,
   verified register→login→room→send→sync→read-back locally, documented. **Public exposure done too:**
   `https://matrix.rw3iss.com` live (gray-cloud DNS + Let's Encrypt + nginx proxy), public login verified.
-- **M2 — Desktop client MVP.** *(in progress)* New `src/matrix/` core on `matrix-sdk`: login, restore
-  session (persistent), RoomListService list, Timeline for one room, send/receive **E2E** text. Exit
-  criteria: two desktop installs chat encrypted; session & keys survive restart.
-  - ✅ **M2.0 — dual-backend scaffolding (2026-07-20):** `matrix-sdk 0.18` added (graph unifies with
-    iroh, see §5); `AppConfig.backend`/`homeserver_url` (default `matrix` / `https://matrix.rw3iss.com`);
-    `MatrixState` + commands `matrix_login`/`matrix_restore_session`/`matrix_logout`/`matrix_status`
-    (SQLite stores, `FullSession` persist/restore per the SDK example); wired in `lib.rs`; TS `api.ts`
-    types + methods. `cargo check` + `tsc` green. *Next:* route `LoginView` by backend; sync + room list.
-- **M3 — Rooms + DMs + media.** Create/join rooms, DMs, invites/accept, membership/power levels,
-  encrypted media upload/download with our attachment UI + image modal.
-- **M4 — Trust & recovery.** Cross-signing, SAS/QR **device verification** UX, **key backup/recovery**.
-- **M5 — Android.** `tauri android init`, responsive UI pass, native file picker, run on device/emulator
-  (foreground delivery first).
-- **M6 — Push.** Sygnal + FCM (+APNs), pushers, `event_id_only`; background delivery on Android/iOS.
-- **M7 — iOS.** On the Mac: `tauri ios init`, Xcode signing, APNs, Keychain, capture protection.
-- **M8 — Web (optional).** Decide WASM vs `matrix-js-sdk`; ship a web build.
-- **M9 — Polish & release.** Tier-1/2 UI features, store assets, export-compliance, review submission,
-  CI for all platforms.
+- **M2 — Desktop client MVP. ✅ DONE (2026-07-20).** `src/matrix/` core on `matrix-sdk 0.18`:
+  backend-routed login, persistent session restore, background `client.sync()` with a typed message
+  handler → `matrix://message`, room list, timeline history (raw-JSON parse) + live, send. UI:
+  `MatrixApp`/`MatrixLogin`/`MatrixChat`. `cargo check` + `tsc` + `vite build` green. **Runtime test
+  (two installs, E2E over restart) is the user's step** — needs `pnpm tauri dev` / a display.
+- **M3 — Rooms + DMs + media. ✅ DONE (2026-07-20).** `matrix_create_dm`/`create_room` (Megolm on
+  create), invite/join/leave, `room_members`, `send_file` (encrypted `send_attachment`),
+  `read_media` (data URL) + `save_media` (fetch+decrypt). UI: create controls, file attach, inline
+  image bubbles + download chips, room header/Leave.
+- **M4 — Trust & recovery. ✅ DONE (2026-07-20).** `matrix_devices`, `matrix_verify_device`
+  (cross-sign), `matrix_recovery_enable` (bootstrap cross-signing + encrypted backup → recovery key),
+  `matrix_recover`, `matrix_verification_status`. UI: `MatrixSecurity` modal. *Follow-up:* interactive
+  SAS-emoji/QR verification (stateful `m.key.verification.*` handling) — manual per-device verify ships now.
+- **M5 — Android.** ✅ **Responsive UI pass done** (single-pane mobile layout, `matrix.scss` media
+  query + back button). ⚠️ **Gated on your machine:** `tauri android init` + device/emulator run need
+  the Android SDK/NDK + a device. Exact commands in the **cross-platform runbook**
+  (`docs/superpowers/specs/2026-07-20-matrix-cross-platform-runbook.md`).
+- **M6 — Push.** ⚠️ **Gated on your FCM/APNs accounts.** Architecture + Sygnal deploy steps + pusher
+  registration are written up in the runbook; can't be exercised without push credentials.
+- **M7 — iOS.** ⚠️ **Gated on a Mac + Xcode + Apple Developer account.** `tauri ios init` + signing +
+  APNs steps in the runbook.
+- **M8 — Web (optional).** Decision recorded (**`matrix-js-sdk`**, separate build — the Tauri Rust-IPC
+  core doesn't run in a browser); scoped in the runbook, not built.
+- **M9 — Polish & release.** CI already builds macOS/Windows/Linux via `release.yml` (tauri-action);
+  Tier-1/2 UI features + store assets + export-compliance are the remaining, itemized in the runbook.
 
-Each milestone is a reviewable checkpoint; M1–M4 are the critical path to "it works E2E on desktop."
+Each milestone is a reviewable checkpoint; **M1–M4 (the critical path — "it works E2E on desktop") are
+DONE as compile-verified code.** M5–M9 are platform/ops phases gated on external hardware/accounts;
+they're carried to "ready-to-run" (concrete commands + config) in the cross-platform runbook.
 
 ---
 

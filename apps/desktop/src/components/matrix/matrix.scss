@@ -5,6 +5,38 @@
 	height: 100%;
 }
 
+// The header back button only matters on narrow (mobile) layouts.
+.mx-back {
+	display: none;
+	background: transparent;
+	border: none;
+	color: $text;
+	font-size: 22px;
+	line-height: 1;
+	padding: 0 $space-2 0 0;
+}
+
+// Mobile / narrow layout: one pane at a time. The room list is the default view; opening
+// a room slides the chat over the full width, with the header back button to return.
+@media (max-width: 640px) {
+	.mx-sidebar {
+		width: 100%;
+	}
+
+	.mx-main {
+		display: none;
+	}
+
+	.mx--room-open {
+		.mx-sidebar { display: none; }
+		.mx-main { display: flex; }
+	}
+
+	.mx-back { display: block; }
+
+	.mx-msg { max-width: 85%; }
+}
+
 .mx-sidebar {
 	width: 260px;
 	display: flex;

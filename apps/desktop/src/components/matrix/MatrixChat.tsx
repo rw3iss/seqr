@@ -116,7 +116,7 @@ export function MatrixChat({ status, onLogout }: Props) {
 	const activeRoom = rooms.find((r) => r.id === active)
 
 	return (
-		<div class="mx">
+		<div class={`mx${active ? " mx--room-open" : ""}`}>
 			<aside class="mx-sidebar">
 				<div class="mx-me">
 					<div class="mx-me-id">{status.user_id}</div>
@@ -159,6 +159,7 @@ export function MatrixChat({ status, onLogout }: Props) {
 				) : (
 					<>
 						<header class="mx-header">
+							<button class="mx-back" onClick={() => setActive(null)} title="Back">‹</button>
 							<span class="mx-room-name">{activeRoom.name}</span>
 							<button
 								class="mx-leave"

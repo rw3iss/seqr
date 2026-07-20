@@ -6,6 +6,18 @@ with **iroh** for transport and a self-hosted **mailbox** helper for offline del
 
 Full design rationale: `docs/superpowers/specs/2026-06-26-seqr-e2e-chat-design.md`.
 
+> **⚠️ Active migration to Matrix (dual-backend).** Seqr is moving to a self-hosted
+> **Matrix** backend (`matrix-sdk`) for true cross-platform (desktop/Android/iOS/web) with a
+> central homeserver, while **keeping the P2P stack compiled in as a runtime-selectable
+> fallback**. Both backends coexist; `AppConfig.backend` (`matrix` default | `p2p`) picks the
+> active one at launch. Homeserver **Continuwuity** is live at `https://matrix.rw3iss.com`
+> (server `162.35.181.92`, ops home `/var/www/seqr-matrix`). The desktop Matrix client
+> (login, rooms/DMs, E2E send/receive, media, device verification, key backup) is done as
+> compile-verified code in `apps/desktop/src-tauri/src/matrix/` + `src/components/matrix/`.
+> Plan: `docs/superpowers/specs/2026-07-05-matrix-migration-plan.md`; cross-platform runbook
+> (Android/push/iOS/web/release): `docs/superpowers/specs/2026-07-20-matrix-cross-platform-runbook.md`.
+> The P2P sections below still describe the fallback backend.
+
 ## Repository layout
 
 ```

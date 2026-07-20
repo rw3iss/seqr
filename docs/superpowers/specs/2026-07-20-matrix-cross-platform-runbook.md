@@ -1,0 +1,142 @@
+# Seqr (Matrix) — cross-platform runbook (M5–M9)
+
+Companion to `2026-07-05-matrix-migration-plan.md`. The desktop E2E client (M1–M4) is
+**done as compile-verified code**. The phases below are gated on hardware/accounts I can't
+provision from this environment, so each is written as **exact steps you run**, plus what's
+already prepared in the repo.
+
+Everything runs from `apps/desktop` unless noted. The active backend is chosen at launch
+from config (`backend = "matrix"`, default) — see the plan §6.0/§5.
+
+---
+
+## M5 — Android
+
+**Prepared:** responsive single-pane mobile layout (`src/components/matrix/matrix.scss`
+`@media (max-width: 640px)` + header back button); Tauri v2 mobile is supported by the
+existing `tauri.conf.json` (`identifier com.seqr.app`, `bundle.targets "all"`).
+
+**You need:** Android Studio + SDK (API 34), NDK, `ANDROID_HOME`/`NDK_HOME` env, a device or
+emulator, JDK 17. Rust Android targets.
+
+```bash
+rustup target add aarch64-linux-android armv7-linux-androideabi \
+                  i686-linux-android x86_64-linux-android
+cd apps/desktop
+pnpm install
+pnpm tauri android init          # generates gen/android (one-time)
+pnpm tauri android dev           # run on the connected device/emulator
+# release APK/AAB:
+pnpm tauri android build --apk   # or --aab for Play
+```
+
+**Notes / gotchas**
+- The Matrix SQLite stores use `bundled-sqlite`, so no system sqlite dep on-device. Good.
+- `matrix-sdk` compiles for Android on stable dalek 2.x (same graph as desktop; see plan §5).
+- File picker + save use `@tauri-apps/plugin-dialog`, which has Android support in v2.
+- **Screen-capture protection**: the desktop code has a Linux no-op / macOS+Windows impl.
+  Android equivalent is `FLAG_SECURE` on the activity window — add in the generated
+  `gen/android` MainActivity if you want capture protection there (optional).
+- First run: verify this device from an already-verified device (Security modal → Verify),
+  or run `matrix_recover` with the recovery key to pull cross-signing + key backup.
+
+---
+
+## M6 — Push notifications
+
+**Why a gateway:** Matrix push goes homeserver → **Sygnal** (push gateway) → FCM (Android) /
+APNs (iOS). Continuwuity emits the push; Sygnal holds your FCM/APNs secrets and forwards.
+Use `event_id_only` so no message content leaves the gateway; the app fetches + decrypts on
+wake.
+
+**You need:** a Firebase project (FCM v1 service-account JSON) for Android; an Apple push key
+(`.p8`, APNs) for iOS.
+
+**Deploy Sygnal on the VPS (162.35.181.92)** — mirrors the mailbox pattern (systemd, `/etc`,
+`/var/lib`, nginx TLS on a gray-cloud subdomain, e.g. `push.rw3iss.com`):
+
+```bash
+# on 162.35.181.92
+python3 -m venv /opt/sygnal && /opt/sygnal/bin/pip install matrix-sygnal
+sudo install -d -o sygnal -g sygnal /etc/sygnal /var/lib/sygnal
+# /etc/sygnal/sygnal.yaml — apps:
+#   com.seqr.app.android: { type: gcm, api_version: v1,
+#     project_id: <fcm-project>, service_account_file: /etc/sygnal/fcm.json }
+#   com.seqr.app.ios:     { type: apns, keyfile: /etc/sygnal/apns.p8,
+#     key_id: <..>, team_id: <..>, topic: com.seqr.app }
+# systemd unit -> /opt/sygnal/bin/python -m sygnal, listen 127.0.0.1:5000
+# nginx: push.rw3iss.com (gray-cloud DNS + certbot) -> 127.0.0.1:5000
+```
+
+**Client side (to implement):** register a pusher after login with the FCM/APNs token:
+`client.pusher().set(pusher)` (matrix-sdk `Pusher` with the Sygnal `url`,
+`app_id = com.seqr.app.<platform>`, `pushkey = <device push token>`, `event_id_only`
+format). Wire a Tauri command `matrix_register_pusher(token)` called from the mobile
+push-token plugin callback. UnifiedPush/ntfy is a Google-free alternative for Android.
+
+**Status:** un-exercisable here (no push creds). Architecture + deploy above are the plan.
+
+---
+
+## M7 — iOS
+
+**You need:** a Mac, Xcode, an Apple Developer account (signing), APNs key (shared with M6).
+
+```bash
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+cd apps/desktop
+pnpm tauri ios init            # generates gen/apple (one-time)
+pnpm tauri ios dev             # run on simulator/device
+pnpm tauri ios build           # archive; sign in Xcode (Team + provisioning)
+```
+
+- Screen-capture protection on iOS: `isSecureTextEntry`-style overlay / `UIScreen.isCaptured`
+  observer in the generated project (optional; parity with desktop).
+- Keychain: matrix-sdk session/store passphrase should live in the iOS Keychain rather than a
+  plaintext file (also the desktop `TODO(security)` in `matrix/client.rs`).
+
+---
+
+## M8 — Web (optional)
+
+**Decision: `matrix-js-sdk`, as a separate build.** The Tauri desktop client's backend is a
+**Rust core reached over Tauri IPC** — that seam doesn't exist in a browser, so a web build
+can't reuse `src/matrix/*`. Options:
+
+1. **`matrix-js-sdk`** in a Preact web app reusing the *presentational* components
+   (`MatrixChat`/`MatrixLogin` refactored to take a data layer via props/context). Recommended.
+2. Compile the Rust core to **WASM** (`matrix-sdk` has a `js`/`indexeddb` path) and keep one
+   codebase — heavier, less mature for full app use.
+
+Either way it's a distinct target; scoped, not built. Reuse the SCSS tokens + component markup.
+
+---
+
+## M9 — Polish & release
+
+**Already in place:** `.github/workflows/release.yml` (tauri-action) builds macOS `.dmg`
+(universal), Windows `.msi`, Linux `.AppImage`/`.deb` on a `v*` tag → drafts a GitHub Release.
+Unsigned (no Apple/Windows certs) — see repo `CLAUDE.md` "Packaging / distribution".
+
+**Remaining (itemized):**
+- **Tier-1 UI parity** (plan §11): reactions, replies/threads, edits/redaction, read receipts,
+  typing, markdown render, richer room-management (name/topic/avatar, power levels).
+- **Store assets**: icons (have `com.seqr.app` identifier), screenshots, descriptions,
+  privacy labels; **export-compliance** (uses standard crypto → self-classification/ECCN).
+- **Signing** for store distribution: Apple Developer cert (macOS/iOS), Play signing key,
+  optional Windows Authenticode.
+- **CI extension**: add Android (`--aab`) + iOS jobs to `release.yml` once M5/M7 init'd.
+- **Security TODO**: encrypt the Matrix session file at rest (Argon2id from login password),
+  per `apps/desktop/src-tauri/src/matrix/client.rs`.
+
+---
+
+## What's runtime-verifiable *now* (desktop, your machine)
+
+```bash
+cd apps/desktop && pnpm install && pnpm tauri dev
+# Sign in as @ryan:rw3iss.com (or register another account with the token in
+#   /etc/conduwuit/conduwuit.toml on the server), create a room / DM, send text + a file,
+#   open Security → enable key backup. Run a second instance on another profile/machine to
+#   confirm E2E + that the session survives a restart.
+```
