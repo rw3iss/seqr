@@ -1,3 +1,7 @@
+// matrix-sdk's deeply-nested futures overflow the default auto-trait (Send) recursion
+// limit when spawned; raise it. (Standard workaround for the SDK.)
+#![recursion_limit = "512"]
+
 //! Seqr desktop backend entry point.
 //!
 //! Resolves the per-user data/config directories, loads configuration (the VPS
@@ -87,6 +91,10 @@ pub fn run() {
             matrix::commands::matrix_login,
             matrix::commands::matrix_restore_session,
             matrix::commands::matrix_logout,
+            matrix::commands::matrix_start_sync,
+            matrix::commands::matrix_rooms,
+            matrix::commands::matrix_send_message,
+            matrix::commands::matrix_room_messages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

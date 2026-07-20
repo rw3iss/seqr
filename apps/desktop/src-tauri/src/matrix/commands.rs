@@ -4,13 +4,17 @@
 //! probe the UI polls to decide whether to show the login screen or the app. Errors are
 //! flattened to strings (the UI's `errMessage` renders them).
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use matrix_sdk::Client;
+use matrix_sdk::ruma::events::room::message::RoomMessageEventContent;
+use matrix_sdk::ruma::{RoomId, UInt};
+use matrix_sdk::{room::MessagesOptions, Client};
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::matrix::client::{build_client, new_passphrase, ClientSession, FullSession};
+use crate::matrix::sync::MatrixMessage;
 use crate::matrix::MatrixState;
 
 type MxState<'a> = State<'a, Arc<MatrixState>>;
@@ -126,6 +130,106 @@ pub async fn matrix_logout(state: MxState<'_>) -> Result<(), String> {
     if let Some(client) = state.client.write().await.take() {
         let _ = client.matrix_auth().logout().await;
     }
+    state.syncing.store(false, Ordering::SeqCst);
     let _ = std::fs::remove_file(state.session_file());
     Ok(())
+}
+
+/// Start the background sync loop (once). Emits `matrix://message` on new messages.
+#[tauri::command]
+pub async fn matrix_start_sync(app: AppHandle, state: MxState<'_>) -> Result<(), String> {
+    if state.syncing.swap(true, Ordering::SeqCst) {
+        return Ok(()); // already running
+    }
+    let client = {
+        let guard = state.client.read().await;
+        guard.as_ref().ok_or("not logged in")?.clone()
+    };
+    crate::matrix::sync::start(client, app);
+    Ok(())
+}
+
+/// A joined room, for the conversations list.
+#[derive(Serialize)]
+pub struct MatrixRoom {
+    pub id: String,
+    pub name: String,
+    pub is_dm: bool,
+}
+
+/// List the rooms the user has joined.
+#[tauri::command]
+pub async fn matrix_rooms(state: MxState<'_>) -> Result<Vec<MatrixRoom>, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let mut out = Vec::new();
+    for room in client.joined_rooms() {
+        let name = room.name().unwrap_or_else(|| room.room_id().to_string());
+        let is_dm = room.is_direct().await.unwrap_or(false);
+        out.push(MatrixRoom { id: room.room_id().to_string(), name, is_dm });
+    }
+    Ok(out)
+}
+
+/// Send a plain-text message to a room.
+#[tauri::command]
+pub async fn matrix_send_message(
+    room_id: String,
+    body: String,
+    state: MxState<'_>,
+) -> Result<(), String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+    room.send(RoomMessageEventContent::text_plain(body))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Recent text history for a room (oldest-first), parsed from raw events so we don't
+/// depend on the SDK's evolving timeline-item enums.
+#[tauri::command]
+pub async fn matrix_room_messages(
+    room_id: String,
+    state: MxState<'_>,
+) -> Result<Vec<MatrixMessage>, String> {
+    let guard = state.client.read().await;
+    let client = guard.as_ref().ok_or("not logged in")?;
+    let me = client.user_id().map(|u| u.to_string());
+    let rid = RoomId::parse(&room_id).map_err(|e| e.to_string())?;
+    let room = client.get_room(&rid).ok_or("unknown room")?;
+
+    let mut opts = MessagesOptions::backward();
+    opts.limit = UInt::from(50u32);
+    let resp = room.messages(opts).await.map_err(|e| e.to_string())?;
+
+    let mut out = Vec::new();
+    for ev in resp.chunk {
+        let json = ev.raw().json();
+        let v: serde_json::Value = match serde_json::from_str(json.get()) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("m.room.message") {
+            continue;
+        }
+        let content = &v["content"];
+        if content.get("msgtype").and_then(|m| m.as_str()) != Some("m.text") {
+            continue;
+        }
+        let Some(body) = content.get("body").and_then(|b| b.as_str()) else { continue };
+        let sender = v.get("sender").and_then(|s| s.as_str()).unwrap_or("").to_string();
+        out.push(MatrixMessage {
+            room_id: room_id.clone(),
+            event_id: v.get("event_id").and_then(|e| e.as_str()).map(String::from),
+            outgoing: me.as_deref() == Some(sender.as_str()),
+            sender,
+            body: body.to_string(),
+            ts: v.get("origin_server_ts").and_then(|t| t.as_u64()).unwrap_or(0),
+        });
+    }
+    out.reverse(); // backward() yields newest-first; the UI wants oldest-first
+    Ok(out)
 }

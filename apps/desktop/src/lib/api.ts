@@ -46,6 +46,23 @@ export interface MatrixStatus {
 	device_id: string | null
 }
 
+export interface MatrixRoom {
+	id: string
+	name: string
+	is_dm: boolean
+}
+
+export interface MatrixMessage {
+	room_id: string
+	event_id: string | null
+	sender: string
+	body: string
+	ts: number
+	outgoing: boolean
+}
+
+export const MATRIX_MESSAGE_EVENT = "matrix://message"
+
 export interface AttachmentInfo {
 	id: string
 	filename: string
@@ -97,6 +114,15 @@ export const api = {
 	matrixLogin: (username: string, password: string): Promise<MatrixStatus> =>
 		invoke("matrix_login", { username, password }),
 	matrixLogout: (): Promise<void> => invoke("matrix_logout"),
+	matrixStartSync: (): Promise<void> => invoke("matrix_start_sync"),
+	matrixRooms: (): Promise<MatrixRoom[]> => invoke("matrix_rooms"),
+	matrixRoomMessages: (roomId: string): Promise<MatrixMessage[]> =>
+		invoke("matrix_room_messages", { roomId }),
+	matrixSendMessage: (roomId: string, body: string): Promise<void> =>
+		invoke("matrix_send_message", { roomId, body }),
+	onMatrixMessage: (cb: (m: MatrixMessage) => void): Promise<UnlistenFn> =>
+		listen<MatrixMessage>(MATRIX_MESSAGE_EVENT, (e) => cb(e.payload)),
+
 
 	createAccount: (displayName: string, password: string): Promise<ProfileBlob> =>
 		invoke("create_account", { displayName, password }),

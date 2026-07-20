@@ -1,0 +1,104 @@
+@use "../../styles/tokens" as *;
+
+.mx {
+	display: flex;
+	height: 100%;
+}
+
+.mx-sidebar {
+	width: 260px;
+	display: flex;
+	flex-direction: column;
+	background: $bg-panel;
+	border-right: 1px solid $border;
+}
+
+.mx-me {
+	padding: $space-4;
+	border-bottom: 1px solid $border;
+
+	.mx-me-id {
+		font-size: 13px;
+		color: $text;
+		word-break: break-all;
+	}
+}
+
+.mx-logout {
+	margin-top: $space-2;
+	font-size: 12px;
+}
+
+.mx-rooms {
+	flex: 1;
+	overflow-y: auto;
+}
+
+.mx-room {
+	padding: $space-3 $space-4;
+	cursor: pointer;
+	border-bottom: 1px solid $border;
+	border-left: 2px solid transparent;
+
+	&:hover { background: $bg-elevated; }
+	&.active {
+		background: $bg-elevated;
+		border-left-color: $accent;
+	}
+
+	.mx-room-name { color: $text; }
+	.mx-room-kind { font-size: 11px; color: $text-muted; }
+}
+
+.mx-main {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.mx-empty {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: $text-muted;
+}
+
+.mx-messages {
+	flex: 1;
+	overflow-y: auto;
+	padding: $space-4;
+	display: flex;
+	flex-direction: column;
+	gap: $space-2;
+}
+
+.mx-msg {
+	max-width: 70%;
+	padding: $space-2 $space-3;
+	border-radius: $radius;
+	background: $bg-panel;
+	word-break: break-word;
+
+	&.out {
+		align-self: flex-end;
+		background: $accent;
+		color: #fff;
+	}
+
+	.mx-msg-sender {
+		font-size: 11px;
+		color: $text-muted;
+		margin-bottom: 2px;
+	}
+}
+
+.mx-composer {
+	display: flex;
+	gap: $space-2;
+	padding: $space-3;
+	border-top: 1px solid $border;
+
+	input { flex: 1; }
+}

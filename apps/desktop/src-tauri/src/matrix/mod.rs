@@ -10,8 +10,10 @@
 
 pub mod client;
 pub mod commands;
+pub mod sync;
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
 use matrix_sdk::Client;
 use tokio::sync::RwLock;
@@ -24,11 +26,18 @@ pub struct MatrixState {
     homeserver_url: String,
     /// The live client, present once logged in or restored from disk.
     client: RwLock<Option<Client>>,
+    /// Whether the background sync loop has been started (start it exactly once).
+    syncing: AtomicBool,
 }
 
 impl MatrixState {
     pub fn new(data_dir: PathBuf, homeserver_url: String) -> Self {
-        Self { data_dir, homeserver_url, client: RwLock::new(None) }
+        Self {
+            data_dir,
+            homeserver_url,
+            client: RwLock::new(None),
+            syncing: AtomicBool::new(false),
+        }
     }
 
     pub fn homeserver_url(&self) -> &str {
