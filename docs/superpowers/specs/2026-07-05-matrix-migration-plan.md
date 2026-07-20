@@ -343,10 +343,11 @@ Matrix gives us these largely "for free" — prioritized:
     (emoji)" on devices. ⚠️ **Compile-verified but not two-device tested** — validate with a real
     self-verification. Manual "Trust" (cross-sign) remains as the no-emoji fallback.
   - ✅ **Session encrypted at rest** (Argon2id via `seqr-crypto`); unlock-on-launch.
-- **M5 — Android.** ✅ **Responsive UI pass done** (single-pane mobile layout, `matrix.scss` media
-  query + back button). ⚠️ **Gated on your machine:** `tauri android init` + device/emulator run need
-  the Android SDK/NDK + a device. Exact commands in the **cross-platform runbook**
-  (`docs/superpowers/specs/2026-07-20-matrix-cross-platform-runbook.md`).
+- **M5 — Android. ✅ BUILDS (2026-07-20).** Responsive single-pane layout; `tauri android init`
+  done (`gen/android` committed); **debug APK builds** (arm64, matrix-sdk cross-compiled, JDK 21 +
+  NDK r26); `FLAG_SECURE` screen-capture protection in `MainActivity`. **Remaining:** run on a device
+  (needs your phone/emulator), FCM push wiring (`google-services.json` + token → `matrixRegisterPusher`),
+  and a signed release build. See runbook §M5.
 - **M6 — Push.** ◑ **Gateway DEPLOYED (2026-07-20).** Sygnal live on the VPS (`sygnal.service`,
   FCM v1 project `seqr-comm`), exposed at `https://matrix.rw3iss.com/_matrix/push/v1/notify`;
   client `matrix_register_pusher` implemented. **Remaining:** the on-device FCM token (needs the

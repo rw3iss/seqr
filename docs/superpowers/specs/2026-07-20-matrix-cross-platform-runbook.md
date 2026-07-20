@@ -12,22 +12,34 @@ from config (`backend = "matrix"`, default) — see the plan §6.0/§5.
 
 ## M5 — Android
 
-**Prepared:** responsive single-pane mobile layout (`src/components/matrix/matrix.scss`
-`@media (max-width: 640px)` + header back button); Tauri v2 mobile is supported by the
-existing `tauri.conf.json` (`identifier com.seqr.app`, `bundle.targets "all"`).
+**✅ BUILT (2026-07-20).** `tauri android init` scaffolded `gen/android`, and a debug APK
+**builds successfully** on this machine (Preact → Rust core incl. matrix-sdk cross-compiled
+for `aarch64-linux-android`, then Gradle). Toolchain used: JDK 21, Gradle 8.14.3,
+`ANDROID_HOME=~/Android/Sdk`, NDK r26 (`ndk/26.3.11579264`), all four Rust android targets.
+`aws-lc-sys`/rustls cross-compiled cleanly. **Screen-capture protection** (`FLAG_SECURE`) is
+applied in `MainActivity.kt` (parity with desktop). App id `com.seqr.app`.
 
-**You need:** Android Studio + SDK (API 34), NDK, `ANDROID_HOME`/`NDK_HOME` env, a device or
-emulator, JDK 17. Rust Android targets.
+Artifact: `gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk`
+(~818 MB **debug**, unstripped — a release build strips this to tens of MB).
 
+**Reproduce / run:**
 ```bash
-rustup target add aarch64-linux-android armv7-linux-androideabi \
-                  i686-linux-android x86_64-linux-android
+export ANDROID_HOME=~/Android/Sdk
+export NDK_HOME=$ANDROID_HOME/ndk/26.3.11579264
 cd apps/desktop
-pnpm install
-pnpm tauri android init          # generates gen/android (one-time)
-pnpm tauri android dev           # run on the connected device/emulator
-# release APK/AAB:
-pnpm tauri android build --apk   # or --aab for Play
+pnpm tauri android build --apk --debug --target aarch64   # debug APK (auto-signed)
+# run on a device/emulator:
+adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/debug/app-universal-debug.apk
+# or live-reload dev (boots the AVD 'claimleo' or a plugged-in device):
+pnpm tauri android dev
+```
+
+**Release (for distribution) — needs a signing keystore:**
+```bash
+keytool -genkey -v -keystore ~/seqr-release.jks -keyalg RSA -keysize 2048 \
+  -validity 10000 -alias seqr
+# add signing config to gen/android (keystore.properties) per Tauri docs, then:
+pnpm tauri android build --apk --split-per-abi    # stripped release APKs, one per ABI
 ```
 
 **Notes / gotchas**
